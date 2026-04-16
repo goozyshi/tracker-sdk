@@ -167,7 +167,7 @@ export const createTracker = (options?: TrackerOptions): Tracker => new Tracker(
 const TRACKER_KEY = '__TRACKER_SDK_INSTANCE__';
 
 function getGlobalTracker(): Tracker {
-  const g = globalThis as any;
+  const g = (typeof window !== 'undefined' ? window : globalThis) as any;
   if (!g[TRACKER_KEY]) {
     g[TRACKER_KEY] = new Tracker();
   }
