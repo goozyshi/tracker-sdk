@@ -5,7 +5,14 @@
 ## 安装
 
 ```bash
-npm install @goozyshi/tracker-sdk
+# npm
+npm i @goozyshi/tracker-sdk
+
+# pnpm
+pnpm add @goozyshi/tracker-sdk
+
+# yarn
+yarn add @goozyshi/tracker-sdk
 ```
 
 ## 初始化
