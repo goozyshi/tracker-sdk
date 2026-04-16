@@ -1,4 +1,4 @@
-import type { ExposureOptions, TrackEvent } from './types';
+import type { ExposureOptions, UnbindFn } from './types';
 import { tracker } from './tracker';
 import { throttle } from './utils';
 
@@ -21,9 +21,9 @@ export class ExposureManager {
   observe(
     el: Element,
     event: string,
-    data: any,
+    data: Record<string, any> | undefined,
     options: ExposureOptions = {}
-  ): () => void {
+  ): UnbindFn {
     const config: ExposureConfig = {
       threshold: options.threshold ?? 0.5,
       duration: options.duration ?? 0,
@@ -46,9 +46,9 @@ export class ExposureManager {
   private observeWithIO(
     el: Element,
     event: string,
-    data: any,
+    data: Record<string, any> | undefined,
     config: ExposureConfig
-  ): () => void {
+  ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
 
     const observer = new IntersectionObserver(
@@ -89,9 +89,9 @@ export class ExposureManager {
   private observeWithScroll(
     el: Element,
     event: string,
-    data: any,
+    data: Record<string, any> | undefined,
     config: ExposureConfig
-  ): () => void {
+  ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
 
     const checkVisibility = () => {

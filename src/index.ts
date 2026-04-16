@@ -15,4 +15,7 @@ export type {
   BatchOptions,
   OfflineOptions,
   SendEventOptions,
+  UnbindFn,
+  TransformFn,
+  FilterFn,
 } from './core/types';

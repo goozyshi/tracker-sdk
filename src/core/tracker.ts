@@ -5,6 +5,8 @@ import type {
   DataProvider,
   TrackerOptions,
   TrackEvent,
+  TransformFn,
+  FilterFn,
 } from './types';
 import { withGlobalData, withTransformer, withFilter } from './middleware';
 import { BatchManager } from './batch';
@@ -13,21 +15,29 @@ import { OfflineManager } from './offline';
 export class Tracker {
   private reporters: Reporter[] = [];
   private middlewares: Middleware[] = [];
-  private options: TrackerOptions;
+  private options: TrackerOptions = {};
   private failedQueue: { reporter: string; event: string; data: any; retries: number }[] = [];
   private batchManager: BatchManager | null = null;
   private offlineManager: OfflineManager | null = null;
 
   constructor(options: TrackerOptions = {}) {
-    this.options = options;
+    if (Object.keys(options).length > 0) {
+      this.init(options);
+    }
+  }
 
-    if (options.offline?.enabled) {
+  init(options: TrackerOptions): this {
+    this.options = { ...this.options, ...options };
+
+    if (options.offline?.enabled && !this.offlineManager) {
       this.offlineManager = new OfflineManager(options.offline, this);
     }
 
-    if (options.batch?.enabled) {
+    if (options.batch?.enabled && !this.batchManager) {
       this.batchManager = new BatchManager(options.batch, this.reporters, this.offlineManager);
     }
+
+    return this;
   }
 
   addReporter(reporter: Reporter): this {
@@ -48,11 +58,11 @@ export class Tracker {
     return this.use(withGlobalData(provider));
   }
 
-  transform(fn: (data: any) => any): this {
+  transform(fn: TransformFn): this {
     return this.use(withTransformer(fn));
   }
 
-  filter(predicate: (event: string, data: any) => boolean): this {
+  filter(predicate: FilterFn): this {
     return this.use(withFilter(predicate));
   }
 
@@ -154,4 +164,4 @@ export class Tracker {
 
 export const createTracker = (options?: TrackerOptions): Tracker => new Tracker(options);
 
-export const tracker = createTracker();
+export const tracker = new Tracker();

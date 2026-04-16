@@ -104,13 +104,17 @@ export class BatchManager {
   private flushSync(): void {
     if (!this.queue.length) return;
 
-    const batch = this.queue.splice(0);
-    const data = JSON.stringify({ events: batch });
-
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      navigator.sendBeacon('/api/track/batch', data);
+    const items = this.queue.splice(0);
+    const events = items.map(({ event, data, timestamp }) => ({ event, data, timestamp }));
+    
+    if (this.offlineManager) {
+      this.offlineManager.saveAll(events);
     } else {
-      this.offlineManager?.saveAll(batch);
+      for (const reporter of this.reporters) {
+        for (const e of events) {
+          try { reporter.track(e.event, e.data); } catch {}
+        }
+      }
     }
   }
 

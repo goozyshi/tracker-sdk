@@ -1,4 +1,4 @@
-import type { Middleware, DataProvider } from './types';
+import type { Middleware, DataProvider, TransformFn, FilterFn } from './types';
 
 export const withGlobalData = (provider: DataProvider): Middleware =>
   (ctx, next) => {
@@ -7,13 +7,13 @@ export const withGlobalData = (provider: DataProvider): Middleware =>
     next();
   };
 
-export const withTransformer = (fn: (data: any) => any): Middleware =>
+export const withTransformer = (fn: TransformFn): Middleware =>
   (ctx, next) => {
     ctx.data = fn(ctx.data);
     next();
   };
 
-export const withFilter = (predicate: (event: string, data: any) => boolean): Middleware =>
+export const withFilter = (predicate: FilterFn): Middleware =>
   (ctx, next) => {
     if (predicate(ctx.event, ctx.data)) next();
   };

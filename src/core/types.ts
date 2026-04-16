@@ -59,3 +59,9 @@ export interface ClickOptions {
   debounce?: number;
   throttle?: number;
 }
+
+export type UnbindFn = () => void;
+
+export type TransformFn = (data: Record<string, any>) => Record<string, any>;
+
+export type FilterFn = (event: string, data: Record<string, any>) => boolean;

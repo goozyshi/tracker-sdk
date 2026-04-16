@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, type RefObject } from 'react';
 import { exposureManager } from '../core/exposure';
 import { tracker } from '../core/tracker';
 import type { ExposureOptions, ClickOptions } from '../core/types';
@@ -17,7 +17,7 @@ export function useExposure<T extends HTMLElement = HTMLElement>(
   event: string,
   data?: Record<string, any>,
   options: UseExposureOptions = {}
-) {
+): RefObject<T> {
   const ref = useRef<T>(null);
   const { reporters, ...exposureOptions } = options;
   const finalData = useMemo(

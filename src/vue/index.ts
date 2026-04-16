@@ -90,3 +90,17 @@ export const clickDirective: Directive<HTMLElement, ClickBinding> = {
 };
 
 export default { exposeDirective, clickDirective };
+
+declare module 'vue' {
+  interface ComponentCustomProperties {
+    vExpose: typeof exposeDirective;
+    vClick: typeof clickDirective;
+  }
+}
+
+declare module '@vue/runtime-core' {
+  interface GlobalDirectives {
+    vExpose: typeof exposeDirective;
+    vClick: typeof clickDirective;
+  }
+}

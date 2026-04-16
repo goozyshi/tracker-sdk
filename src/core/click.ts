@@ -1,4 +1,4 @@
-import type { ClickOptions } from './types';
+import type { ClickOptions, UnbindFn } from './types';
 import { tracker } from './tracker';
 import { debounce, throttle } from './utils';
 
@@ -8,9 +8,9 @@ export class ClickManager {
   bindClick(
     el: Element,
     event: string,
-    data: any,
+    data: Record<string, any> | undefined,
     options: ClickOptions = {}
-  ): () => void {
+  ): UnbindFn {
     const { debounce: debounceMs = 0, throttle: throttleMs = 0 } = options;
 
     let handler = () => tracker.track(event, data);
