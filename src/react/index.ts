@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, type RefObject } from 'react';
 import { exposureManager } from '../core/exposure';
 import { tracker } from '../core/tracker';
-import type { ExposureOptions, ClickOptions } from '../core/types';
+import type { ExposureOptions, ClickOptions, EventName } from '../core/types';
 import { debounce, throttle } from '../core/utils';
 
 export interface UseExposureOptions {
@@ -14,7 +14,7 @@ export interface UseExposureOptions {
 }
 
 export function useExposure<T extends HTMLElement = HTMLElement>(
-  event: string,
+  event: EventName,
   data?: Record<string, any>,
   options: UseExposureOptions = {}
 ): RefObject<T> {
@@ -48,7 +48,7 @@ export interface UseClickOptions {
 }
 
 export function useClick(
-  event: string,
+  event: EventName,
   data?: Record<string, any>,
   options: UseClickOptions = {}
 ): () => void {

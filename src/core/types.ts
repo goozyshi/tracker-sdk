@@ -62,6 +62,12 @@ export interface ClickOptions {
 
 export type UnbindFn = () => void;
 
+export interface EventRegistry {}
+
+export type EventName = keyof EventRegistry extends never
+  ? string
+  : keyof EventRegistry;
+
 export type TransformFn = (data: Record<string, any>) => Record<string, any>;
 
 export type FilterFn = (event: string, data: Record<string, any>) => boolean;

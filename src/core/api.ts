@@ -1,8 +1,8 @@
 import { tracker } from './tracker';
-import type { SendEventOptions } from './types';
+import type { SendEventOptions, EventName } from './types';
 
 export function sendEvent(
-  event: string, 
+  event: EventName,
   data?: Record<string, any>,
   options?: SendEventOptions
 ): void {

@@ -18,4 +18,6 @@ export type {
   UnbindFn,
   TransformFn,
   FilterFn,
+  EventRegistry,
+  EventName,
 } from './core/types';

@@ -1,10 +1,10 @@
 import type { Directive } from 'vue';
 import { exposureManager } from '../core/exposure';
 import { clickManager } from '../core/click';
-import type { ExposureOptions, ClickOptions } from '../core/types';
+import type { ExposureOptions, ClickOptions, EventName } from '../core/types';
 
 export interface ExposeBinding {
-  name: string;
+  name: EventName;
   data?: Record<string, any>;
   reporters?: string[];
   threshold?: number;
@@ -15,7 +15,7 @@ export interface ExposeBinding {
 }
 
 export interface ClickBinding {
-  name: string;
+  name: EventName;
   data?: Record<string, any>;
   reporters?: string[];
   debounce?: number;
