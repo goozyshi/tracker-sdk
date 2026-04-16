@@ -164,4 +164,14 @@ export class Tracker {
 
 export const createTracker = (options?: TrackerOptions): Tracker => new Tracker(options);
 
-export const tracker = new Tracker();
+const TRACKER_KEY = '__TRACKER_SDK_INSTANCE__';
+
+function getGlobalTracker(): Tracker {
+  const g = globalThis as any;
+  if (!g[TRACKER_KEY]) {
+    g[TRACKER_KEY] = new Tracker();
+  }
+  return g[TRACKER_KEY];
+}
+
+export const tracker = getGlobalTracker();

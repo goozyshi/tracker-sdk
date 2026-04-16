@@ -1,8 +1,15 @@
 {
   "name": "@goozyshi/tracker-sdk",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Framework-agnostic tracking SDK with Vue directives and React hooks",
-  "keywords": ["tracker", "analytics", "vue", "react", "exposure", "click"],
+  "keywords": [
+    "tracker",
+    "analytics",
+    "vue",
+    "react",
+    "exposure",
+    "click"
+  ],
   "license": "MIT",
   "author": "goozyshi",
   "publishConfig": {
@@ -15,9 +22,15 @@
   "types": "./dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "vue": ["./dist/vue.d.ts"],
-      "vue2": ["./dist/vue2.d.ts"],
-      "react": ["./dist/react.d.ts"]
+      "vue": [
+        "./dist/vue.d.ts"
+      ],
+      "vue2": [
+        "./dist/vue2.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ]
     }
   },
   "exports": {
@@ -42,18 +55,25 @@
       "require": "./dist/react.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "vue": ">=2.6.0",
     "react": ">=16.8.0"
   },
   "peerDependenciesMeta": {
-    "vue": { "optional": true },
-    "react": { "optional": true }
+    "vue": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "tsup": "^8.5.1",
