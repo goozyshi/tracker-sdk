@@ -51,13 +51,15 @@ tracker
 
 ## TrackerOptions
 
-| 字段               | 类型             | 说明                         |
-| ------------------ | ---------------- | ---------------------------- |
+
+| 字段                 | 类型               | 说明                  |
+| ------------------ | ---------------- | ------------------- |
 | `defaultReporters` | `string[]`       | 默认 reporters，不指定则全部 |
-| `batch`            | `BatchOptions`   | 批量上报配置                 |
-| `offline`          | `OfflineOptions` | 离线存储配置                 |
-| `onError`          | `Function`       | 错误回调                     |
-| `retry`            | `{ max, delay }` | 重试配置                     |
+| `batch`            | `BatchOptions`   | 批量上报配置              |
+| `offline`          | `OfflineOptions` | 离线存储配置              |
+| `onError`          | `Function`       | 错误回调                |
+| `retry`            | `{ max, delay }` | 重试配置                |
+
 
 ## Vue 指令
 
@@ -90,10 +92,12 @@ Vue.directive("click", clickDirective);
   v-expose="{
     name: 'banner_expose',
     data: { id: 1 },
-    threshold: 0.5,
-    duration: 1000,
-    once: true,
-    reporters: ['hybrid'],
+    options: {
+      threshold: 0.5,
+      duration: 1000,
+      once: true,
+      reporters: ['hybrid'],
+    },
   }"
 >Banner</div>
 
@@ -103,22 +107,31 @@ Vue.directive("click", clickDirective);
   v-expose="{
     name: 'list_expose',
     data: { id: item.id },
-    groupKey: 'list',
-    groupDelay: 200,
+    options: { groupKey: 'list', groupDelay: 200 },
   }"
 >{{ item.name }}</div>
 ```
 
-| 参数         | 类型       | 默认值 | 说明           |
-| ------------ | ---------- | ------ | -------------- |
-| `name`       | `string`   | -      | 事件名         |
-| `data`       | `object`   | -      | 事件数据       |
-| `threshold`  | `number`   | `0.5`  | 可见比例       |
-| `duration`   | `number`   | `0`    | 曝光时长 (ms)  |
-| `once`       | `boolean`  | `true` | 仅上报一次     |
+
+| 参数        | 类型                     | 说明   |
+| --------- | ---------------------- | ---- |
+| `name`    | `string`               | 事件名  |
+| `data`    | `object`               | 事件数据 |
+| `options` | `ExposeBindingOptions` | 曝光配置 |
+
+
+`options` 字段：
+
+
+| 参数           | 类型         | 默认值    | 说明           |
+| ------------ | ---------- | ------ | ------------ |
+| `threshold`  | `number`   | `0.5`  | 可见比例         |
+| `duration`   | `number`   | `0`    | 曝光时长 (ms)    |
+| `once`       | `boolean`  | `true` | 仅上报一次        |
 | `groupKey`   | `string`   | -      | 分组 key       |
-| `groupDelay` | `number`   | `100`  | 分组延迟 (ms)  |
+| `groupDelay` | `number`   | `100`  | 分组延迟 (ms)    |
 | `reporters`  | `string[]` | -      | 指定 reporters |
+
 
 ### v-click
 
@@ -127,17 +140,31 @@ Vue.directive("click", clickDirective);
 
 <!-- 防抖/节流 -->
 <button
-  v-click="{ name: 'btn_click', data: { id: 'buy' }, debounce: 300 }"
+  v-click="{
+    name: 'btn_click',
+    data: { id: 'buy' },
+    options: { debounce: 300 },
+  }"
 >购买</button>
 ```
 
-| 参数        | 类型       | 说明           |
-| ----------- | ---------- | -------------- |
-| `name`      | `string`   | 事件名         |
-| `data`      | `object`   | 事件数据       |
+
+| 参数        | 类型                    | 说明   |
+| --------- | --------------------- | ---- |
+| `name`    | `string`              | 事件名  |
+| `data`    | `object`              | 事件数据 |
+| `options` | `ClickBindingOptions` | 点击配置 |
+
+
+`options` 字段：
+
+
+| 参数          | 类型         | 说明           |
+| ----------- | ---------- | ------------ |
 | `debounce`  | `number`   | 防抖 (ms)      |
 | `throttle`  | `number`   | 节流 (ms)      |
 | `reporters` | `string[]` | 指定 reporters |
+
 
 ## React Hook
 
@@ -210,13 +237,15 @@ const saReporter: Reporter = {
 };
 ```
 
-| 字段         | 必填 | 说明       |
-| ------------ | ---- | ---------- |
-| `name`       | ✅   | 唯一标识   |
-| `track`      | ✅   | 单条上报   |
-| `batchTrack` | ❌   | 批量上报   |
+
+| 字段           | 必填  | 说明    |
+| ------------ | --- | ----- |
+| `name`       | ✅   | 唯一标识  |
+| `track`      | ✅   | 单条上报  |
+| `batchTrack` | ❌   | 批量上报  |
 | `init`       | ❌   | 初始化钩子 |
-| `destroy`    | ❌   | 销毁钩子   |
+| `destroy`    | ❌   | 销毁钩子  |
+
 
 ## 最佳实践
 
@@ -321,3 +350,4 @@ import type {
   UnbindFn,
 } from "@goozyshi/tracker-sdk";
 ```
+

@@ -1,24 +1,25 @@
-import { exposureManager } from '../core/exposure';
 import { clickManager } from '../core/click';
-import type { ExposureOptions, ClickOptions, EventName } from '../core/types';
+import { exposureManager } from '../core/exposure';
+import type { ClickOptions, EventName, ExposureOptions } from '../core/types';
+
+export interface ExposeBindingOptions extends ExposureOptions {
+  reporters?: string[];
+}
+
+export interface ClickBindingOptions extends ClickOptions {
+  reporters?: string[];
+}
 
 export interface ExposeBinding {
   name: EventName;
   data?: Record<string, any>;
-  reporters?: string[];
-  threshold?: number;
-  duration?: number;
-  once?: boolean;
-  groupKey?: string;
-  groupDelay?: number;
+  options?: ExposeBindingOptions;
 }
 
 export interface ClickBinding {
   name: EventName;
   data?: Record<string, any>;
-  reporters?: string[];
-  debounce?: number;
-  throttle?: number;
+  options?: ClickBindingOptions;
 }
 
 type UnbindFn = () => void;
@@ -28,10 +29,10 @@ const clickUnbindMap = new WeakMap<HTMLElement, UnbindFn>();
 
 export const exposeDirective = {
   bind(el: HTMLElement, binding: { value: ExposeBinding }) {
-    const { name, data, reporters, threshold, duration, once, groupKey, groupDelay } = binding.value;
+    const { name, data, options = {} } = binding.value;
+    const { reporters, ...exposureOptions } = options;
     const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const options: ExposureOptions = { threshold, duration, once, groupKey, groupDelay };
-    const unbind = exposureManager.observe(el, name, finalData, options);
+    const unbind = exposureManager.observe(el, name, finalData, exposureOptions);
     exposeUnbindMap.set(el, unbind);
   },
   update(el: HTMLElement, binding: { value: ExposeBinding }) {
@@ -40,13 +41,13 @@ export const exposeDirective = {
       oldUnbind();
     }
 
-    const { name, data, reporters, threshold, duration, once, groupKey, groupDelay } = binding.value;
-    if (!once) {
+    const { name, data, options = {} } = binding.value;
+    const { reporters, ...exposureOptions } = options;
+    if (!exposureOptions.once) {
       exposureManager.reset(el);
     }
     const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const options: ExposureOptions = { threshold, duration, once, groupKey, groupDelay };
-    const unbind = exposureManager.observe(el, name, finalData, options);
+    const unbind = exposureManager.observe(el, name, finalData, exposureOptions);
     exposeUnbindMap.set(el, unbind);
   },
   unbind(el: HTMLElement) {
@@ -61,10 +62,10 @@ export const exposeDirective = {
 
 export const clickDirective = {
   bind(el: HTMLElement, binding: { value: ClickBinding }) {
-    const { name, data, reporters, debounce, throttle } = binding.value;
+    const { name, data, options = {} } = binding.value;
+    const { reporters, ...clickOptions } = options;
     const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const options: ClickOptions = { debounce, throttle };
-    const unbind = clickManager.bindClick(el, name, finalData, options);
+    const unbind = clickManager.bindClick(el, name, finalData, clickOptions);
     clickUnbindMap.set(el, unbind);
   },
   update(el: HTMLElement, binding: { value: ClickBinding }) {
@@ -73,10 +74,10 @@ export const clickDirective = {
       oldUnbind();
     }
 
-    const { name, data, reporters, debounce, throttle } = binding.value;
+    const { name, data, options = {} } = binding.value;
+    const { reporters, ...clickOptions } = options;
     const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const options: ClickOptions = { debounce, throttle };
-    const unbind = clickManager.bindClick(el, name, finalData, options);
+    const unbind = clickManager.bindClick(el, name, finalData, clickOptions);
     clickUnbindMap.set(el, unbind);
   },
   unbind(el: HTMLElement) {
