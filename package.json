@@ -1,6 +1,6 @@
 {
   "name": "@goozyshi/tracker-sdk",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Framework-agnostic tracking SDK with Vue directives and React hooks",
   "keywords": [
     "tracker",
@@ -86,10 +86,23 @@
     "build": "tsup && node scripts/fix-dts-ext.mjs",
     "dev": "tsup --watch",
     "check-types": "tsc --noEmit",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "prepare": "husky install",
     "changeset": "changeset",
     "version": "changeset version",
+    "version-packages": "changeset version",
     "release": "pnpm build && changeset publish",
     "prepublishOnly": "pnpm build"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,jsonc}": [
+      "biome check --write"
+    ]
   },
   "peerDependencies": {
     "react": ">=16.8.0",
@@ -104,9 +117,14 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
     "@changesets/cli": "^2.29.8",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
     "@types/react": "^18.2.0",
     "@vue/runtime-core": "^3.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
     "react": "^18.2.0",
     "tsup": "^8.5.1",
     "typescript": "^5.0.0",

@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.turbo/
+
+# Lock files
+pnpm-lock.yaml
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+
+# Changesets 生成物
+CHANGELOG.md
