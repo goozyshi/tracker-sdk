@@ -1,16 +1,16 @@
+import { BatchManager } from './batch';
+import { withFilter, withGlobalData, withTransformer } from './middleware';
+import { OfflineManager } from './offline';
 import type {
-  Reporter,
+  DataProvider,
+  FilterFn,
   Middleware,
   MiddlewareContext,
-  DataProvider,
-  TrackerOptions,
+  Reporter,
   TrackEvent,
+  TrackerOptions,
   TransformFn,
-  FilterFn,
 } from './types';
-import { withGlobalData, withTransformer, withFilter } from './middleware';
-import { BatchManager } from './batch';
-import { OfflineManager } from './offline';
 
 export class Tracker {
   private reporters: Reporter[] = [];
@@ -82,10 +82,10 @@ export class Tracker {
 
   private dispatch(event: string, data: Record<string, any>): void {
     const { _reporters, ...cleanData } = data;
-    
+
     const targetNames = _reporters ?? this.options.defaultReporters;
     const targetReporters = targetNames
-      ? this.reporters.filter(r => targetNames.includes(r.name))
+      ? this.reporters.filter((r) => targetNames.includes(r.name))
       : this.reporters;
 
     if (this.batchManager) {
@@ -95,11 +95,7 @@ export class Tracker {
     }
   }
 
-  sendToReporters(
-    event: string, 
-    data: Record<string, any>, 
-    reporters?: Reporter[]
-  ): void {
+  sendToReporters(event: string, data: Record<string, any>, reporters?: Reporter[]): void {
     const targets = reporters ?? this.reporters;
     targets.forEach(async (r) => {
       try {
@@ -142,7 +138,7 @@ export class Tracker {
       const item = this.failedQueue.shift();
       if (!item || item.retries >= max) return;
 
-      const r = this.reporters.find(r => r.name === item.reporter);
+      const r = this.reporters.find((r) => r.name === item.reporter);
       if (r) {
         Promise.resolve(r.track(item.event, item.data)).catch(() => {
           this.failedQueue.push({ ...item, retries: item.retries + 1 });
@@ -153,7 +149,9 @@ export class Tracker {
   }
 
   destroy(): void {
-    this.reporters.forEach(r => r.destroy?.());
+    this.reporters.forEach((r) => {
+      r.destroy?.();
+    });
     this.reporters = [];
     this.middlewares = [];
     this.failedQueue = [];

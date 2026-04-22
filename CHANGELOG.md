@@ -1,5 +1,11 @@
 # @goozyshi/tracker-sdk
 
+## 1.2.0
+
+### Minor Changes
+
+- fix: dts
+
 ## 1.1.1
 
 ### Patch Changes
