@@ -1,5 +1,11 @@
 # @goozyshi/tracker-sdk
 
+## 1.1.1
+
+### Patch Changes
+
+- fix: vue 指令和 hook 参数统一
+
 ## 1.1.0
 
 ### Minor Changes
