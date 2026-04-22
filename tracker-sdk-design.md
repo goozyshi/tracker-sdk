@@ -585,9 +585,9 @@ class ExposureManager {
   }
 
   destroy() {
-    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.forEach((t) => {clearTimeout(t)});
     this.timers.clear();
-    this.groups.forEach((g) => clearTimeout(g.timer));
+    this.groups.forEach((g) => {clearTimeout(g.timer)});
     this.groups.clear();
   }
 }

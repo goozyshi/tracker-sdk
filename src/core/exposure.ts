@@ -1,5 +1,5 @@
-import type { ExposureOptions, UnbindFn } from './types';
 import { tracker } from './tracker';
+import type { ExposureOptions, UnbindFn } from './types';
 import { throttle } from './utils';
 
 interface ExposureConfig {
@@ -13,7 +13,10 @@ interface ExposureConfig {
 export class ExposureManager {
   private timers = new Map<Element, ReturnType<typeof setTimeout>>();
   private exposed = new WeakSet<Element>();
-  private groups = new Map<string, { event: string; items: any[]; timer: ReturnType<typeof setTimeout> }>();
+  private groups = new Map<
+    string,
+    { event: string; items: unknown[]; timer: ReturnType<typeof setTimeout> }
+  >();
   private observers = new WeakMap<Element, IntersectionObserver>();
   private scrollHandlers = new WeakMap<Element, () => void>();
   private supportIO = typeof IntersectionObserver !== 'undefined';
@@ -21,7 +24,7 @@ export class ExposureManager {
   observe(
     el: Element,
     event: string,
-    data: Record<string, any> | undefined,
+    data: Record<string, unknown> | undefined,
     options: ExposureOptions = {}
   ): UnbindFn {
     const config: ExposureConfig = {
@@ -46,7 +49,7 @@ export class ExposureManager {
   private observeWithIO(
     el: Element,
     event: string,
-    data: Record<string, any> | undefined,
+    data: Record<string, unknown> | undefined,
     config: ExposureConfig
   ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
@@ -54,8 +57,12 @@ export class ExposureManager {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          if (once && this.exposed.has(el)) return;
+
           if (entry.isIntersecting && entry.intersectionRatio >= threshold) {
             if (duration > 0) {
+              const existing = this.timers.get(el);
+              if (existing) clearTimeout(existing);
               const timer = setTimeout(() => {
                 this.handleExposure(el, event, data, once, groupKey, groupDelay);
                 this.timers.delete(el);
@@ -89,7 +96,7 @@ export class ExposureManager {
   private observeWithScroll(
     el: Element,
     event: string,
-    data: Record<string, any> | undefined,
+    data: Record<string, unknown> | undefined,
     config: ExposureConfig
   ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
@@ -198,9 +205,13 @@ export class ExposureManager {
   }
 
   destroy(): void {
-    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.forEach((t) => {
+      clearTimeout(t);
+    });
     this.timers.clear();
-    this.groups.forEach((g) => clearTimeout(g.timer));
+    this.groups.forEach((g) => {
+      clearTimeout(g.timer);
+    });
     this.groups.clear();
   }
 }

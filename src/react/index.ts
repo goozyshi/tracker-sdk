@@ -28,6 +28,9 @@ export function useExposure<T extends HTMLElement = HTMLElement>(
   reportersRef.current = reporters;
   optionsRef.current = exposureOptions;
 
+  const unbindRef = useRef<(() => void) | null>(null);
+  const observingRef = useRef(false);
+
   const dataKey = JSON.stringify(data);
   const reportersKey = JSON.stringify(reporters);
   const optionsKey = JSON.stringify(exposureOptions);
@@ -37,19 +40,36 @@ export function useExposure<T extends HTMLElement = HTMLElement>(
     const el = ref.current;
     if (!el) return;
 
+    const opts = optionsRef.current;
+    const once = opts.once !== false;
+
+    if (once && observingRef.current) return;
+
+    if (unbindRef.current) {
+      unbindRef.current();
+      if (!once) exposureManager.reset(el);
+    }
+
     const reps = reportersRef.current;
     const d = dataRef.current;
-    const opts = optionsRef.current;
     const finalData = reps ? { ...d, _reporters: reps } : d;
-    const unbind = exposureManager.observe(el, event, finalData, opts);
+    unbindRef.current = exposureManager.observe(el, event, finalData, opts);
+    observingRef.current = true;
+  }, [event, dataKey, reportersKey, optionsKey]);
 
+  useEffect(() => {
     return () => {
-      unbind();
-      if (opts.once === false) {
+      if (unbindRef.current) {
+        unbindRef.current();
+        unbindRef.current = null;
+      }
+      const el = ref.current;
+      if (el && optionsRef.current.once === false) {
         exposureManager.reset(el);
       }
+      observingRef.current = false;
     };
-  }, [event, dataKey, reportersKey, optionsKey]);
+  }, []);
 
   return ref;
 }

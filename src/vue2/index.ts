@@ -36,16 +36,17 @@ export const exposeDirective = {
     exposeUnbindMap.set(el, unbind);
   },
   update(el: HTMLElement, binding: { value: ExposeBinding }) {
+    const { name, data, options = {} } = binding.value;
+    const { reporters, ...exposureOptions } = options;
+    const once = exposureOptions.once !== false;
+
+    if (once) return;
+
     const oldUnbind = exposeUnbindMap.get(el);
     if (oldUnbind) {
       oldUnbind();
     }
-
-    const { name, data, options = {} } = binding.value;
-    const { reporters, ...exposureOptions } = options;
-    if (exposureOptions.once === false) {
-      exposureManager.reset(el);
-    }
+    exposureManager.reset(el);
     const finalData = reporters ? { ...data, _reporters: reporters } : data;
     const unbind = exposureManager.observe(el, name, finalData, exposureOptions);
     exposeUnbindMap.set(el, unbind);
