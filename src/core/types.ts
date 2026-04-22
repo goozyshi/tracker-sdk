@@ -61,12 +61,10 @@ export interface ClickOptions {
 }
 
 export type UnbindFn = () => void;
-
+// biome-ignore lint/suspicious/noEmptyInterface: intentional for module augmentation
 export interface EventRegistry {}
 
-export type EventName = keyof EventRegistry extends never
-  ? string
-  : keyof EventRegistry;
+export type EventName = keyof EventRegistry extends never ? string : keyof EventRegistry;
 
 export type TransformFn = (data: Record<string, any>) => Record<string, any>;
 
