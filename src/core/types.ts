@@ -4,10 +4,14 @@ export interface TrackEvent {
   timestamp: number;
 }
 
+export interface ReporterContext {
+  sync?: boolean;
+}
+
 export interface Reporter {
   name: string;
-  track: (event: string, data?: Record<string, any>) => void | Promise<void>;
-  batchTrack?: (events: TrackEvent[]) => void | Promise<void>;
+  track: (event: string, data?: Record<string, any>, ctx?: ReporterContext) => void | Promise<void>;
+  batchTrack?: (events: TrackEvent[], ctx?: ReporterContext) => void | Promise<void>;
   init?: () => void;
   destroy?: () => void;
 }

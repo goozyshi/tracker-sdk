@@ -1,23 +1,27 @@
-export { Tracker, createTracker, tracker } from './core/tracker';
 export { sendEvent } from './core/api';
-export { exposureManager } from './core/exposure';
 export { clickManager } from './core/click';
+export { exposureManager } from './core/exposure';
+export type { HttpReporterOptions } from './core/http-reporter';
+export { createHttpReporter } from './core/http-reporter';
+export { createTracker, Tracker, tracker } from './core/tracker';
+export type { TransportChannel, TransportRequest } from './core/transport';
 
 export type {
-  Reporter,
+  BatchOptions,
+  ClickOptions,
+  DataProvider,
+  EventName,
+  EventRegistry,
+  ExposureOptions,
+  FilterFn,
   Middleware,
   MiddlewareContext,
-  DataProvider,
-  TrackerOptions,
-  TrackEvent,
-  ExposureOptions,
-  ClickOptions,
-  BatchOptions,
   OfflineOptions,
+  Reporter,
+  ReporterContext,
   SendEventOptions,
-  UnbindFn,
+  TrackEvent,
+  TrackerOptions,
   TransformFn,
-  FilterFn,
-  EventRegistry,
-  EventName,
+  UnbindFn,
 } from './core/types';

@@ -56,8 +56,10 @@ const { useExposure } = require("@goozyshi/tracker-sdk/react");
 
 ## 初始化
 
+SDK 默认导出**全局单例** `tracker`，跨模块共享，直接 `import` 即用。开启 `batch` / `offline` / `retry` 等能力时需先显式调用一次 `tracker.init(options)`。
+
 ```ts
-import { tracker, type Reporter } from "@goozyshi/tracker-sdk";
+import { tracker, createHttpReporter, type Reporter } from "@goozyshi/tracker-sdk";
 
 const consoleReporter: Reporter = {
   name: "console",
@@ -66,27 +68,28 @@ const consoleReporter: Reporter = {
   },
 };
 
-const hybridReporter: Reporter = {
-  name: "hybrid",
-  track(event, data) {
-    window.HybridBridge?.report({ event, ...data });
-  },
-};
-
 tracker
   .init({
-    defaultReporters: ["hybrid"],
+    defaultReporters: ["http"],
     batch: { enabled: true, maxSize: 20, interval: 5000 },
     offline: { enabled: true },
     onError: (err, reporter, event) => console.error(err),
   })
+  .addReporter(
+    createHttpReporter({
+      name: "http",
+      url: "https://log.example.com/collect",
+      batchTransform: (events) => ({ batch: events }),
+    })
+  )
   .addReporter(consoleReporter)
-  .addReporter(hybridReporter)
   .setGlobalData({ appVersion: "1.0.0" })
   .setGlobalData(() => ({ userId: getUserId() }))
   .transform((data) => ({ ...data, ts: Date.now() }))
   .filter((event) => !event.startsWith("debug_"));
 ```
+
+> 需要多个隔离实例（如主站 + 子应用上报到不同后端）时，用 `createTracker(options)` 显式创建。
 
 ## TrackerOptions
 
@@ -257,7 +260,51 @@ sendEvent("page_view", { page: "home" });
 sendEvent("debug_log", { msg: "test" }, { reporters: ["console"] });
 ```
 
-## Reporter 实现
+## 内置 HTTP Reporter
+
+多数场景无需手写 Reporter，用 `createHttpReporter` 传 `url` + 可选 `transform` 即可。内部按场景自动降级：
+
+- **页面卸载 / `visibilitychange` hidden**：`sendBeacon` → `fetch(keepalive)` → `image`
+- **普通上报**：`fetch(keepalive)` → `sendBeacon` → `image` → `xhr`
+- payload > 60KB 自动跳过 `sendBeacon`；payload > 64KB 自动关闭 `fetch` 的 `keepalive`
+- `image` 通道用 `GET` 拼 query 上报 gif，可跨域，URL > 2000 字符时跳过
+
+```ts
+import { createHttpReporter } from "@goozyshi/tracker-sdk";
+
+const httpReporter = createHttpReporter({
+  name: "http",
+  url: "https://log.example.com/collect",
+  endpoints: {
+    image: "https://log.example.com/pixel.gif",
+  },
+  transform: (event, data) => ({ e: event, ...data, t: Date.now() }),
+  batchTransform: (events) => ({ batch: events }),
+  headers: { "X-App": "demo" },
+  credentials: "include",
+  timeout: 5000,
+  transport: ["beacon", "fetch", "image", "xhr"],
+});
+```
+
+
+| 字段               | 类型                                          | 说明                                              |
+| ---------------- | ------------------------------------------- | ----------------------------------------------- |
+| `name`           | `string`                                    | 唯一标识                                            |
+| `url`            | `string`                                    | 默认上报地址，所有未在 `endpoints` 覆盖的通道都走这里               |
+| `endpoints`      | `Partial<Record<TransportChannel, string>>` | 按通道覆盖 URL，典型场景：`image` 单独指向 GET 像素接口            |
+| `transform`      | `(event, data) => any`                      | 单条 payload 构造，默认 `{ event, data }`              |
+| `batchTransform` | `(events) => any`                           | 批量 payload 构造，默认 `{ events }`                   |
+| `transport`      | `TransportChannel[]`                        | 启用的通道，默认全开                                      |
+| `headers`        | `Record<string,string>`                     | 自定义请求头（仅 `fetch` / `xhr` 生效）                    |
+| `credentials`    | `RequestCredentials`                        | 跨域凭据                                            |
+| `timeout`        | `number`                                    | 超时 (ms)                                         |
+| `method`         | `'POST' \| 'GET'`                           | HTTP 方法，默认 `POST`                               |
+
+
+## 自定义 Reporter
+
+需要对接私有 SDK 或做特殊处理时，实现 `Reporter` 接口即可：
 
 ```ts
 import type { Reporter } from "@goozyshi/tracker-sdk";
@@ -265,10 +312,7 @@ import type { Reporter } from "@goozyshi/tracker-sdk";
 const saReporter: Reporter = {
   name: "sa",
   track(event, data) {
-    sensors.track(event, {
-      $time: data?.ts,
-      ...data,
-    });
+    sensors.track(event, { $time: data?.ts, ...data });
   },
   batchTrack(events) {
     sensors.batchSend(events);
@@ -277,13 +321,13 @@ const saReporter: Reporter = {
 ```
 
 
-| 字段           | 必填  | 说明    |
-| ------------ | --- | ----- |
-| `name`       | ✅   | 唯一标识  |
-| `track`      | ✅   | 单条上报  |
-| `batchTrack` | ❌   | 批量上报  |
-| `init`       | ❌   | 初始化钩子 |
-| `destroy`    | ❌   | 销毁钩子  |
+| 字段           | 必填  | 说明                                                 |
+| ------------ | --- | -------------------------------------------------- |
+| `name`       | ✅   | 唯一标识                                               |
+| `track`      | ✅   | 单条上报，第三参 `ctx?.sync=true` 表示页面卸载场景，应走 `sendBeacon` |
+| `batchTrack` | ❌   | 批量上报，第三参同上                                         |
+| `init`       | ❌   | 初始化钩子                                              |
+| `destroy`    | ❌   | 销毁钩子                                               |
 
 
 ## 最佳实践
@@ -377,6 +421,7 @@ src/tracker/
 ```ts
 import type {
   Reporter,
+  ReporterContext,
   TrackerOptions,
   ExposureOptions,
   ClickOptions,
@@ -387,6 +432,9 @@ import type {
   TransformFn,
   FilterFn,
   UnbindFn,
+  HttpReporterOptions,
+  TransportChannel,
+  TransportRequest,
 } from "@goozyshi/tracker-sdk";
 ```
 

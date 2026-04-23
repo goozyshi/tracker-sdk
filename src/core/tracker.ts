@@ -7,6 +7,7 @@ import type {
   Middleware,
   MiddlewareContext,
   Reporter,
+  ReporterContext,
   TrackEvent,
   TrackerOptions,
   TransformFn,
@@ -106,14 +107,18 @@ export class Tracker {
     });
   }
 
-  async sendBatch(batch: TrackEvent[], reporters?: Reporter[]): Promise<void> {
+  async sendBatch(
+    batch: TrackEvent[],
+    reporters?: Reporter[],
+    ctx?: ReporterContext
+  ): Promise<void> {
     const targets = reporters ?? this.reporters;
     for (const reporter of targets) {
       if (reporter.batchTrack) {
-        await reporter.batchTrack(batch);
+        await reporter.batchTrack(batch, ctx);
       } else {
         for (const item of batch) {
-          await reporter.track(item.event, item.data);
+          await reporter.track(item.event, item.data, ctx);
         }
       }
     }
