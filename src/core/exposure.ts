@@ -1,5 +1,5 @@
 import { tracker } from './tracker';
-import type { ExposureOptions, UnbindFn } from './types';
+import type { ExposureOptions, TrackOptions, UnbindFn } from './types';
 import { throttle } from './utils';
 
 interface ExposureConfig {
@@ -10,12 +10,21 @@ interface ExposureConfig {
   groupDelay: number;
 }
 
+type ValueOrGetter<T> = T | (() => T);
+type ExposureDataInput = ValueOrGetter<Record<string, unknown> | undefined>;
+type TrackOptionsInput = ValueOrGetter<TrackOptions | undefined>;
+
 export class ExposureManager {
   private timers = new Map<Element, ReturnType<typeof setTimeout>>();
   private exposed = new WeakSet<Element>();
   private groups = new Map<
     string,
-    { event: string; items: unknown[]; timer: ReturnType<typeof setTimeout> }
+    {
+      event: string;
+      items: unknown[];
+      timer: ReturnType<typeof setTimeout>;
+      trackOptions?: TrackOptions;
+    }
   >();
   private observers = new WeakMap<Element, IntersectionObserver>();
   private scrollHandlers = new WeakMap<Element, () => void>();
@@ -24,8 +33,9 @@ export class ExposureManager {
   observe(
     el: Element,
     event: string,
-    data: Record<string, unknown> | undefined,
-    options: ExposureOptions = {}
+    data: ExposureDataInput,
+    options: ExposureOptions = {},
+    trackOptions?: TrackOptionsInput
   ): UnbindFn {
     const config: ExposureConfig = {
       threshold: options.threshold ?? 0.5,
@@ -40,17 +50,18 @@ export class ExposureManager {
     }
 
     if (this.supportIO) {
-      return this.observeWithIO(el, event, data, config);
+      return this.observeWithIO(el, event, data, config, trackOptions);
     } else {
-      return this.observeWithScroll(el, event, data, config);
+      return this.observeWithScroll(el, event, data, config, trackOptions);
     }
   }
 
   private observeWithIO(
     el: Element,
     event: string,
-    data: Record<string, unknown> | undefined,
-    config: ExposureConfig
+    data: ExposureDataInput,
+    config: ExposureConfig,
+    trackOptions?: TrackOptionsInput
   ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
 
@@ -64,12 +75,12 @@ export class ExposureManager {
               const existing = this.timers.get(el);
               if (existing) clearTimeout(existing);
               const timer = setTimeout(() => {
-                this.handleExposure(el, event, data, once, groupKey, groupDelay);
+                this.handleExposure(el, event, data, once, groupKey, groupDelay, trackOptions);
                 this.timers.delete(el);
               }, duration);
               this.timers.set(el, timer);
             } else {
-              this.handleExposure(el, event, data, once, groupKey, groupDelay);
+              this.handleExposure(el, event, data, once, groupKey, groupDelay, trackOptions);
             }
           } else {
             const timer = this.timers.get(el);
@@ -96,8 +107,9 @@ export class ExposureManager {
   private observeWithScroll(
     el: Element,
     event: string,
-    data: Record<string, unknown> | undefined,
-    config: ExposureConfig
+    data: ExposureDataInput,
+    config: ExposureConfig,
+    trackOptions?: TrackOptionsInput
   ): UnbindFn {
     const { threshold, duration, once, groupKey, groupDelay } = config;
 
@@ -116,13 +128,13 @@ export class ExposureManager {
         if (duration > 0) {
           if (!this.timers.has(el)) {
             const timer = setTimeout(() => {
-              this.handleExposure(el, event, data, once, groupKey, groupDelay);
+              this.handleExposure(el, event, data, once, groupKey, groupDelay, trackOptions);
               this.timers.delete(el);
             }, duration);
             this.timers.set(el, timer);
           }
         } else {
-          this.handleExposure(el, event, data, once, groupKey, groupDelay);
+          this.handleExposure(el, event, data, once, groupKey, groupDelay, trackOptions);
         }
       } else {
         const timer = this.timers.get(el);
@@ -150,36 +162,52 @@ export class ExposureManager {
   private handleExposure(
     el: Element,
     event: string,
-    data: any,
+    data: ExposureDataInput,
     once: boolean,
     groupKey?: string,
-    groupDelay = 100
+    groupDelay = 100,
+    trackOptions?: TrackOptionsInput
   ): void {
+    const finalData = resolveValue(data);
+    const finalTrackOptions = resolveValue(trackOptions);
+
     if (once) {
       if (this.exposed.has(el)) return;
       this.exposed.add(el);
     }
 
     if (groupKey) {
-      this.addToGroup(groupKey, event, data, groupDelay);
+      this.addToGroup(groupKey, event, finalData, groupDelay, finalTrackOptions);
     } else {
-      tracker.track(event, data);
+      tracker.track(event, finalData, finalTrackOptions);
     }
   }
 
-  private addToGroup(key: string, event: string, data: any, delay: number): void {
+  private addToGroup(
+    key: string,
+    event: string,
+    data: unknown,
+    delay: number,
+    trackOptions?: TrackOptions
+  ): void {
     const group = this.groups.get(key);
 
     if (group) {
       clearTimeout(group.timer);
       group.items.push(data);
     } else {
-      this.groups.set(key, { event, items: [data], timer: setTimeout(() => {}, 0) });
+      this.groups.set(key, {
+        event,
+        items: [data],
+        timer: setTimeout(() => {}, 0),
+        trackOptions,
+      });
     }
 
-    const g = this.groups.get(key)!;
+    const g = this.groups.get(key);
+    if (!g) return;
     g.timer = setTimeout(() => {
-      tracker.track(g.event, { items: g.items, count: g.items.length });
+      tracker.track(g.event, { items: g.items, count: g.items.length }, g.trackOptions);
       this.groups.delete(key);
     }, delay);
   }
@@ -217,3 +245,7 @@ export class ExposureManager {
 }
 
 export const exposureManager = new ExposureManager();
+
+function resolveValue<T>(value: ValueOrGetter<T>): T {
+  return typeof value === 'function' ? (value as () => T)() : value;
+}

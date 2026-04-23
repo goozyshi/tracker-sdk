@@ -1,22 +1,19 @@
 import type { OfflineManager } from './offline';
-import type { BatchOptions, Reporter, ReporterContext, TrackEvent } from './types';
+import type { Tracker } from './tracker';
+import type { BatchOptions, DispatchEvent, Reporter, ReporterContext } from './types';
 
-interface QueueItem extends TrackEvent {
-  reporters: Reporter[];
+interface QueueItem extends DispatchEvent {
+  targetReporters: Reporter[];
 }
 
 export class BatchManager {
   private queue: QueueItem[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private options: Required<BatchOptions>;
-  private reporters: Reporter[];
+  private tracker: Tracker;
   private offlineManager: OfflineManager | null;
 
-  constructor(
-    options: BatchOptions = {},
-    reporters: Reporter[],
-    offlineManager: OfflineManager | null
-  ) {
+  constructor(options: BatchOptions = {}, tracker: Tracker, offlineManager: OfflineManager | null) {
     this.options = {
       enabled: true,
       maxSize: 20,
@@ -24,7 +21,7 @@ export class BatchManager {
       flushOnUnload: true,
       ...options,
     };
-    this.reporters = reporters;
+    this.tracker = tracker;
     this.offlineManager = offlineManager;
 
     this.startTimer();
@@ -33,12 +30,8 @@ export class BatchManager {
     }
   }
 
-  setReporters(reporters: Reporter[]): void {
-    this.reporters = reporters;
-  }
-
-  add(event: string, data: Record<string, any>, reporters: Reporter[]): void {
-    this.queue.push({ event, data, timestamp: Date.now(), reporters });
+  add(event: DispatchEvent, reporters: Reporter[]): void {
+    this.queue.push({ ...event, targetReporters: reporters });
     if (this.queue.length >= this.options.maxSize) {
       this.flush();
     }
@@ -50,20 +43,22 @@ export class BatchManager {
     const items = this.queue.splice(0, this.options.maxSize);
 
     // 按 reporters 分组
-    const groups = new Map<string, { reporters: Reporter[]; events: TrackEvent[] }>();
+    const groups = new Map<string, { reporters: Reporter[]; events: DispatchEvent[] }>();
 
     for (const item of items) {
-      const key = item.reporters
+      const key = item.targetReporters
         .map((r) => r.name)
         .sort()
         .join(',');
       if (!groups.has(key)) {
-        groups.set(key, { reporters: item.reporters, events: [] });
+        groups.set(key, { reporters: item.targetReporters, events: [] });
       }
       groups.get(key)!.events.push({
         event: item.event,
         data: item.data,
         timestamp: item.timestamp,
+        reporters: item.reporters,
+        reporterData: item.reporterData,
       });
     }
 
@@ -77,20 +72,11 @@ export class BatchManager {
   }
 
   async sendBatch(
-    batch: TrackEvent[],
+    batch: DispatchEvent[],
     reporters?: Reporter[],
     ctx?: ReporterContext
   ): Promise<void> {
-    const targets = reporters ?? this.reporters;
-    for (const reporter of targets) {
-      if (reporter.batchTrack) {
-        await reporter.batchTrack(batch, ctx);
-      } else {
-        for (const item of batch) {
-          await reporter.track(item.event, item.data, ctx);
-        }
-      }
-    }
+    await this.tracker.sendBatch(batch, reporters, ctx);
   }
 
   private startTimer(): void {
@@ -112,42 +98,33 @@ export class BatchManager {
 
     const items = this.queue.splice(0);
 
-    const groups = new Map<string, { reporters: Reporter[]; events: TrackEvent[] }>();
+    const groups = new Map<string, { reporters: Reporter[]; events: DispatchEvent[] }>();
     for (const item of items) {
-      const key = item.reporters
+      const key = item.targetReporters
         .map((r) => r.name)
         .sort()
         .join(',');
       if (!groups.has(key)) {
-        groups.set(key, { reporters: item.reporters, events: [] });
+        groups.set(key, { reporters: item.targetReporters, events: [] });
       }
       groups.get(key)!.events.push({
         event: item.event,
         data: item.data,
         timestamp: item.timestamp,
+        reporters: item.reporters,
+        reporterData: item.reporterData,
       });
     }
 
     for (const { reporters, events } of groups.values()) {
-      for (const reporter of reporters) {
-        const onFail = () => this.offlineManager?.saveAll(events);
-        try {
-          if (reporter.batchTrack) {
-            const r = reporter.batchTrack(events, { sync: true });
-            if (r && typeof (r as Promise<void>).catch === 'function') {
-              (r as Promise<void>).catch(onFail);
-            }
-          } else {
-            for (const e of events) {
-              const r = reporter.track(e.event, e.data, { sync: true });
-              if (r && typeof (r as Promise<void>).catch === 'function') {
-                (r as Promise<void>).catch(() => this.offlineManager?.saveAll([e]));
-              }
-            }
-          }
-        } catch {
-          onFail();
+      const onFail = () => this.offlineManager?.saveAll(events);
+      try {
+        const result = this.sendBatch(events, reporters, { sync: true });
+        if (result && typeof result.catch === 'function') {
+          result.catch(onFail);
         }
+      } catch {
+        onFail();
       }
     }
   }

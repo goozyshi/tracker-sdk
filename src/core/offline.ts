@@ -1,5 +1,5 @@
-import type { OfflineOptions, TrackEvent } from './types';
 import type { Tracker } from './tracker';
+import type { DispatchEvent, OfflineOptions } from './types';
 import { chunk, sleep } from './utils';
 
 export class OfflineManager {
@@ -21,7 +21,7 @@ export class OfflineManager {
     this.flushOnStart();
   }
 
-  saveAll(events: TrackEvent[]): void {
+  saveAll(events: DispatchEvent[]): void {
     if (!this.options.enabled) return;
     if (typeof localStorage === 'undefined') return;
 
@@ -35,7 +35,7 @@ export class OfflineManager {
     localStorage.setItem(this.key, JSON.stringify(stored));
   }
 
-  private load(): TrackEvent[] {
+  private load(): DispatchEvent[] {
     if (typeof localStorage === 'undefined') return [];
 
     try {
@@ -74,20 +74,27 @@ export class OfflineManager {
     if (!stored.length) return;
 
     const now = Date.now();
-    const valid = stored.filter(
-      item => now - item.timestamp < this.options.maxAge * 1000
-    );
+    const valid = stored.filter((item) => now - item.timestamp < this.options.maxAge * 1000);
 
     if (!valid.length) {
       localStorage.removeItem(this.key);
       return;
     }
 
-    const batches = chunk(valid, 20);
+    const groups = new Map<string, DispatchEvent[]>();
+    for (const item of valid) {
+      const key = item.reporters?.slice().sort().join(',') ?? '*';
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(item);
+    }
+
+    const batches = Array.from(groups.values()).flatMap((events) => chunk(events, 20));
 
     for (const batch of batches) {
       try {
-        await this.tracker.sendBatch(batch);
+        await this.tracker.sendBatch(batch, this.tracker.getReporters(batch[0]?.reporters));
         await sleep(1000);
       } catch {
         const idx = batches.indexOf(batch);

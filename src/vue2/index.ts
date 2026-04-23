@@ -1,24 +1,32 @@
 import { clickManager } from '../core/click';
 import { exposureManager } from '../core/exposure';
-import type { ClickOptions, EventName, ExposureOptions } from '../core/types';
+import type {
+  ClickOptions,
+  EventName,
+  ExposureOptions,
+  ReporterDataMap,
+  TrackOptions,
+} from '../core/types';
 
 export interface ExposeBindingOptions extends ExposureOptions {
   reporters?: string[];
+  reporterData?: ReporterDataMap;
 }
 
 export interface ClickBindingOptions extends ClickOptions {
   reporters?: string[];
+  reporterData?: ReporterDataMap;
 }
 
 export interface ExposeBinding {
   name: EventName;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   options?: ExposeBindingOptions;
 }
 
 export interface ClickBinding {
   name: EventName;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   options?: ClickBindingOptions;
 }
 
@@ -30,14 +38,19 @@ const clickUnbindMap = new WeakMap<HTMLElement, UnbindFn>();
 export const exposeDirective = {
   bind(el: HTMLElement, binding: { value: ExposeBinding }) {
     const { name, data, options = {} } = binding.value;
-    const { reporters, ...exposureOptions } = options;
-    const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const unbind = exposureManager.observe(el, name, finalData, exposureOptions);
+    const { reporters, reporterData, ...exposureOptions } = options;
+    const unbind = exposureManager.observe(
+      el,
+      name,
+      data,
+      exposureOptions,
+      createTrackOptions(reporters, reporterData)
+    );
     exposeUnbindMap.set(el, unbind);
   },
   update(el: HTMLElement, binding: { value: ExposeBinding }) {
     const { name, data, options = {} } = binding.value;
-    const { reporters, ...exposureOptions } = options;
+    const { reporters, reporterData, ...exposureOptions } = options;
     const once = exposureOptions.once !== false;
 
     if (once) return;
@@ -47,8 +60,13 @@ export const exposeDirective = {
       oldUnbind();
     }
     exposureManager.reset(el);
-    const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const unbind = exposureManager.observe(el, name, finalData, exposureOptions);
+    const unbind = exposureManager.observe(
+      el,
+      name,
+      data,
+      exposureOptions,
+      createTrackOptions(reporters, reporterData)
+    );
     exposeUnbindMap.set(el, unbind);
   },
   unbind(el: HTMLElement, binding: { value: ExposeBinding }) {
@@ -66,9 +84,14 @@ export const exposeDirective = {
 export const clickDirective = {
   bind(el: HTMLElement, binding: { value: ClickBinding }) {
     const { name, data, options = {} } = binding.value;
-    const { reporters, ...clickOptions } = options;
-    const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const unbind = clickManager.bindClick(el, name, finalData, clickOptions);
+    const { reporters, reporterData, ...clickOptions } = options;
+    const unbind = clickManager.bindClick(
+      el,
+      name,
+      data,
+      clickOptions,
+      createTrackOptions(reporters, reporterData)
+    );
     clickUnbindMap.set(el, unbind);
   },
   update(el: HTMLElement, binding: { value: ClickBinding }) {
@@ -78,9 +101,14 @@ export const clickDirective = {
     }
 
     const { name, data, options = {} } = binding.value;
-    const { reporters, ...clickOptions } = options;
-    const finalData = reporters ? { ...data, _reporters: reporters } : data;
-    const unbind = clickManager.bindClick(el, name, finalData, clickOptions);
+    const { reporters, reporterData, ...clickOptions } = options;
+    const unbind = clickManager.bindClick(
+      el,
+      name,
+      data,
+      clickOptions,
+      createTrackOptions(reporters, reporterData)
+    );
     clickUnbindMap.set(el, unbind);
   },
   unbind(el: HTMLElement) {
@@ -93,3 +121,14 @@ export const clickDirective = {
 };
 
 export default { exposeDirective, clickDirective };
+
+function createTrackOptions(
+  reporters?: string[],
+  reporterData?: ReporterDataMap
+): TrackOptions | undefined {
+  if (!reporters && !reporterData) return undefined;
+  return {
+    reporters,
+    reporterData,
+  };
+}

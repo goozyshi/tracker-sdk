@@ -1,11 +1,12 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import { exposureManager } from '../core/exposure';
 import { tracker } from '../core/tracker';
-import type { EventName } from '../core/types';
+import type { EventName, ReporterDataMap, TrackOptions } from '../core/types';
 import { debounce, throttle } from '../core/utils';
 
 export interface UseExposureOptions {
   reporters?: string[];
+  reporterData?: ReporterDataMap;
   threshold?: number;
   duration?: number;
   once?: boolean;
@@ -15,47 +16,50 @@ export interface UseExposureOptions {
 
 export function useExposure<T extends HTMLElement = HTMLElement>(
   event: EventName,
-  data?: Record<string, any>,
+  data?: Record<string, unknown>,
   options: UseExposureOptions = {}
 ): RefObject<T> {
   const ref = useRef<T>(null);
-  const { reporters, ...exposureOptions } = options;
+  const { reporters, reporterData, ...exposureOptions } = options;
 
   const dataRef = useRef(data);
   const reportersRef = useRef(reporters);
+  const reporterDataRef = useRef(reporterData);
   const optionsRef = useRef(exposureOptions);
   dataRef.current = data;
   reportersRef.current = reporters;
+  reporterDataRef.current = reporterData;
   optionsRef.current = exposureOptions;
 
   const unbindRef = useRef<(() => void) | null>(null);
-  const observingRef = useRef(false);
 
-  const dataKey = JSON.stringify(data);
-  const reportersKey = JSON.stringify(reporters);
-  const optionsKey = JSON.stringify(exposureOptions);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 使用序列化 key 追踪值变化，真实值通过 ref 读取
+  // biome-ignore lint/correctness/useExhaustiveDependencies: data/reporters/reporterData 通过 ref 延迟读取
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
     const opts = optionsRef.current;
-    const once = opts.once !== false;
-
-    if (once && observingRef.current) return;
 
     if (unbindRef.current) {
       unbindRef.current();
-      if (!once) exposureManager.reset(el);
+      if (opts.once === false) exposureManager.reset(el);
     }
 
-    const reps = reportersRef.current;
-    const d = dataRef.current;
-    const finalData = reps ? { ...d, _reporters: reps } : d;
-    unbindRef.current = exposureManager.observe(el, event, finalData, opts);
-    observingRef.current = true;
-  }, [event, dataKey, reportersKey, optionsKey]);
+    unbindRef.current = exposureManager.observe(
+      el,
+      event,
+      () => dataRef.current,
+      opts,
+      () => createTrackOptions(reportersRef.current, reporterDataRef.current)
+    );
+  }, [
+    event,
+    exposureOptions.threshold,
+    exposureOptions.duration,
+    exposureOptions.once,
+    exposureOptions.groupKey,
+    exposureOptions.groupDelay,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -67,7 +71,6 @@ export function useExposure<T extends HTMLElement = HTMLElement>(
       if (el && optionsRef.current.once === false) {
         exposureManager.reset(el);
       }
-      observingRef.current = false;
     };
   }, []);
 
@@ -76,27 +79,31 @@ export function useExposure<T extends HTMLElement = HTMLElement>(
 
 export interface UseClickOptions {
   reporters?: string[];
+  reporterData?: ReporterDataMap;
   debounce?: number;
   throttle?: number;
 }
 
 export function useClick(
   event: EventName,
-  data?: Record<string, any>,
+  data?: Record<string, unknown>,
   options: UseClickOptions = {}
 ): () => void {
-  const { reporters, debounce: debounceMs = 0, throttle: throttleMs = 0 } = options;
+  const { reporters, reporterData, debounce: debounceMs = 0, throttle: throttleMs = 0 } = options;
 
   const dataRef = useRef(data);
   const reportersRef = useRef(reporters);
+  const reporterDataRef = useRef(reporterData);
   dataRef.current = data;
   reportersRef.current = reporters;
+  reporterDataRef.current = reporterData;
 
   const handler = useCallback(() => {
-    const reps = reportersRef.current;
-    const d = dataRef.current;
-    const finalData = reps ? { ...d, _reporters: reps } : d;
-    tracker.track(event, finalData);
+    tracker.track(
+      event,
+      dataRef.current,
+      createTrackOptions(reportersRef.current, reporterDataRef.current)
+    );
   }, [event]);
 
   const wrappedHandler = useMemo(() => {
@@ -106,4 +113,15 @@ export function useClick(
   }, [handler, debounceMs, throttleMs]);
 
   return wrappedHandler;
+}
+
+function createTrackOptions(
+  reporters?: string[],
+  reporterData?: ReporterDataMap
+): TrackOptions | undefined {
+  if (!reporters && !reporterData) return undefined;
+  return {
+    reporters,
+    reporterData,
+  };
 }

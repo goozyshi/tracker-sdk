@@ -85,9 +85,15 @@ tracker
   .addReporter(consoleReporter)
   .setGlobalData({ appVersion: "1.0.0" })
   .setGlobalData(() => ({ userId: getUserId() }))
+  .setReporterGlobalData("http", () => ({ traceId: getTraceId() }))
   .transform((data) => ({ ...data, ts: Date.now() }))
   .filter((event) => !event.startsWith("debug_"));
 ```
+
+`setGlobalData()` 注入的是**所有 reporter 共享**的数据。  
+`setReporterGlobalData(name, provider)` 注入的是**指定 reporter 独享**的数据。
+
+`tracker.init({ middlewareReporter })` 会自动注册内置数据中台 reporter，固定名称为 `middleware`。
 
 > 需要多个隔离实例（如主站 + 子应用上报到不同后端）时，用 `createTracker(options)` 显式创建。
 
@@ -99,6 +105,7 @@ tracker
 | `defaultReporters` | `string[]`       | 默认 reporters，不指定则全部 |
 | `batch`            | `BatchOptions`   | 批量上报配置              |
 | `offline`          | `OfflineOptions` | 离线存储配置              |
+| `middlewareReporter` | `MiddlewareReporterOptions` | 自动注册内置数据中台 reporter |
 | `onError`          | `Function`       | 错误回调                |
 | `retry`            | `{ max, delay }` | 重试配置                |
 
@@ -258,7 +265,57 @@ import { sendEvent } from "@goozyshi/tracker-sdk";
 sendEvent("page_view", { page: "home" });
 
 sendEvent("debug_log", { msg: "test" }, { reporters: ["console"] });
+
+sendEvent(
+  "purchase",
+  { orderId: "123", amount: 99 },
+  {
+    reporters: ["http", "console"],
+    reporterData: {
+      http: {
+        publicInfo: { page: location.pathname },
+      },
+    },
+  }
+);
 ```
+
+### Reporter 数据隔离
+
+- `setGlobalData()`：所有 reporter 共享
+- `setReporterGlobalData(name, provider)`：指定 reporter 共享
+- `sendEvent(event, data, { reporterData })`：指定 reporter 的单次私有数据
+
+```ts
+tracker
+  .addReporter(httpReporter)
+  .addReporter(consoleReporter)
+  .setGlobalData(() => ({ userId: getUserId() }))
+  .setReporterGlobalData("http", () => ({
+    traceId: getTraceId(),
+    publicInfo: { platform: "web" },
+  }));
+
+sendEvent(
+  "buy_click",
+  { skuId: 1 },
+  {
+    reporters: ["http", "console"],
+    reporterData: {
+      http: {
+        publicInfo: { page: "/detail" },
+      },
+    },
+  }
+);
+```
+
+上面这次事件里：
+
+- `console` 只能拿到 `{ skuId: 1 }` 和共享全局数据
+- `http` 额外能拿到自己的 `traceId` / `publicInfo`
+
+SDK 会按 reporter 隔离 `data` 和 `privateData`，某个 reporter 内部修改入参，不会影响其他 reporter。
 
 ## 内置 HTTP Reporter
 
@@ -301,6 +358,98 @@ const httpReporter = createHttpReporter({
 | `timeout`        | `number`                                    | 超时 (ms)                                         |
 | `method`         | `'POST' \| 'GET'`                           | HTTP 方法，默认 `POST`                               |
 
+## 内置数据中台 Reporter
+
+通过 `tracker.init({ middlewareReporter })` 启用，SDK 会自动注册固定名称的 reporter `middleware`，无需手动 `addReporter()`。
+
+```ts
+import { tracker, sendEvent } from "@goozyshi/tracker-sdk";
+
+tracker
+  .init({
+    defaultReporters: ["middleware"],
+    middlewareReporter: {
+      biz: "maidocha",
+      env: "test",
+      publicInfo: () => ({
+        platform: "web",
+        timestamp: Date.now(),
+      }),
+      headers: { "X-App": "zax" },
+      credentials: "include",
+      timeout: 5000,
+      transport: ["image", "fetch", "beacon", "xhr"],
+    },
+  })
+  .setGlobalData(() => ({ userId: getUserId() }))
+  .setReporterGlobalData("middleware", () => ({
+    publicInfo: { appVersion: "1.0.0" },
+    traceId: getTraceId(),
+  }));
+
+sendEvent(
+  "page_view",
+  { page: "home" },
+  {
+    reporterData: {
+      middleware: {
+        publicInfo: { pageId: "home" },
+        abGroup: "A",
+      },
+    },
+  }
+);
+```
+
+上面的请求体会被固定组装成：
+
+```ts
+{
+  biz: "maidocha",
+  public_info: {
+    platform: "web",
+    timestamp: 1710000000000,
+    appVersion: "1.0.0",
+    pageId: "home",
+  },
+  events: [
+    {
+      event_name: "page_view",
+      client_timestamp: 1710000000000,
+      extra: {
+        userId: "u1",
+        traceId: "t1",
+        abGroup: "A",
+        page: "home",
+      },
+    },
+  ],
+}
+```
+
+规则：
+
+- `middlewareReporter.publicInfo` -> `public_info`
+- `setGlobalData()` -> `events[].extra`
+- `setReporterGlobalData("middleware", { publicInfo })` -> `public_info`
+- `setReporterGlobalData("middleware", 其他字段)` -> `events[].extra`
+- `sendEvent(..., { reporterData: { middleware: { publicInfo } } })` -> `public_info`
+- `sendEvent(..., { reporterData: { middleware: 其他字段 } })` -> 当前事件 `extra`
+
+环境与配置：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `biz` | `string` | 业务标识，必填 |
+| `env` | `'test' \| 'prod'` | 环境标识，URL 由 SDK 内部维护；当前版本仅内置 `test` 地址 |
+| `publicInfo` | `DataProvider` | 注入到 `public_info` |
+| `endpoints` | `Partial<Record<TransportChannel, string>>` | 按通道覆盖 URL |
+| `headers` | `Record<string,string>` | 自定义请求头 |
+| `credentials` | `RequestCredentials` | 跨域凭据 |
+| `timeout` | `number` | 超时 (ms) |
+| `transport` | `TransportChannel[]` | 启用的通道，默认 `['image', 'fetch', 'beacon', 'xhr']` |
+| `method` | `'POST' \| 'GET'` | HTTP 方法，默认 `POST` |
+
 
 ## 自定义 Reporter
 
@@ -311,11 +460,21 @@ import type { Reporter } from "@goozyshi/tracker-sdk";
 
 const saReporter: Reporter = {
   name: "sa",
-  track(event, data) {
-    sensors.track(event, { $time: data?.ts, ...data });
+  track(event, data, ctx) {
+    sensors.track(event, {
+      $time: data?.ts,
+      ...ctx?.privateData,
+      ...data,
+    });
   },
   batchTrack(events) {
-    sensors.batchSend(events);
+    sensors.batchSend(
+      events.map(({ event, data, privateData }) => ({
+        event,
+        ...privateData,
+        ...data,
+      }))
+    );
   },
 };
 ```
@@ -324,8 +483,8 @@ const saReporter: Reporter = {
 | 字段           | 必填  | 说明                                                 |
 | ------------ | --- | -------------------------------------------------- |
 | `name`       | ✅   | 唯一标识                                               |
-| `track`      | ✅   | 单条上报，第三参 `ctx?.sync=true` 表示页面卸载场景，应走 `sendBeacon` |
-| `batchTrack` | ❌   | 批量上报，第三参同上                                         |
+| `track`      | ✅   | 单条上报，第三参 `ctx?.sync=true` 表示页面卸载场景，应走 `sendBeacon`；`ctx?.privateData` 为当前 reporter 私有数据 |
+| `batchTrack` | ❌   | 批量上报，第三参同上；每条 `events[i].privateData` 为当前 reporter 私有数据 |
 | `init`       | ❌   | 初始化钩子                                              |
 | `destroy`    | ❌   | 销毁钩子                                               |
 
@@ -421,11 +580,16 @@ src/tracker/
 ```ts
 import type {
   Reporter,
+  ReporterDataMap,
+  ReporterPrivateData,
   ReporterContext,
+  MiddlewareReporterEnv,
+  MiddlewareReporterOptions,
   TrackerOptions,
   ExposureOptions,
   ClickOptions,
   SendEventOptions,
+  TrackOptions,
   TrackEvent,
   Middleware,
   DataProvider,

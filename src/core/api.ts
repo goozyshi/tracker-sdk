@@ -6,6 +6,5 @@ export function sendEvent(
   data?: Record<string, any>,
   options?: SendEventOptions
 ): void {
-  const finalData = options?.reporters ? { ...data, _reporters: options.reporters } : data;
-  tracker.track(event, finalData);
+  tracker.track(event, data, options);
 }
