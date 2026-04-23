@@ -15,6 +15,45 @@ pnpm add @goozyshi/tracker-sdk
 yarn add @goozyshi/tracker-sdk
 ```
 
+## 接入方式
+
+### ESM
+
+```ts
+import { tracker, sendEvent } from "@goozyshi/tracker-sdk";
+import { exposeDirective, clickDirective } from "@goozyshi/tracker-sdk/vue";
+import { useExposure, useClick } from "@goozyshi/tracker-sdk/react";
+```
+
+### CJS
+
+```js
+const { tracker, sendEvent } = require("@goozyshi/tracker-sdk");
+const { exposeDirective } = require("@goozyshi/tracker-sdk/vue");
+const { useExposure } = require("@goozyshi/tracker-sdk/react");
+```
+
+### CDN
+
+通过 `<script>` 引入后，会挂载到全局变量 `TrackerSDK`（仅核心，不含 Vue/React 适配层）。
+
+```html
+<!-- unpkg -->
+<script src="https://unpkg.com/@goozyshi/tracker-sdk"></script>
+
+<!-- jsDelivr -->
+<script src="https://cdn.jsdelivr.net/npm/@goozyshi/tracker-sdk"></script>
+
+<!-- 锁定版本 -->
+<script src="https://unpkg.com/@goozyshi/tracker-sdk@1.2.1/dist/tracker-sdk.min.js"></script>
+
+<script>
+  const { tracker, sendEvent } = TrackerSDK;
+  tracker.init({ /* ... */ });
+  sendEvent("page_view", { page: "home" });
+</script>
+```
+
 ## 初始化
 
 ```ts
