@@ -1,5 +1,11 @@
 # @goozyshi/tracker-sdk
 
+## 1.3.0
+
+### Minor Changes
+
+- 内置 4 通道（beacon\fetch\image\xhr）降级上报
+
 ## 1.2.0
 
 ### Minor Changes
