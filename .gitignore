@@ -1,5 +1,7 @@
 dist/
 node_modules/
+.turbo/
 .npmrc
 .DS_Store
 *.log
+web-sdk-research.md

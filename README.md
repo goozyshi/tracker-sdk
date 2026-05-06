@@ -1,604 +1,557 @@
 # Tracker SDK
 
-框架无关的埋点 SDK，支持 Vue 指令 / React Hook / 命令式 API。
+框架无关的埋点 SDK，monorepo 多包发布。支持命令式 API、Vue 指令、React Hook、Polaris 数据中台 reporter、自定义 reporter、IDM 身份管理、离线兜底、自动通道降级。
+
+## 包结构
+
+| 包                         | 职责                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------- |
+| `@goozyshi/tracker-shared` | 工具 / 类型 / uuid / storage / transport（4 通道降级）                                  |
+| `@goozyshi/tracker-core`   | SDK 内核：配置 / IDM / Session / Pipeline / 队列 / Reporter Registry / 插件总线         |
+| `@goozyshi/tracker-sdk`    | 集成包：内置 Polaris reporter、HTTP reporter 工厂、DOM 工具、React/Vue 子入口、CDN stub |
+
+业务方只需安装 `@goozyshi/tracker-sdk`，依赖会自动带上 core/shared。
 
 ## 安装
 
 ```bash
-# npm
-npm i @goozyshi/tracker-sdk
-
-# pnpm
 pnpm add @goozyshi/tracker-sdk
-
-# yarn
-yarn add @goozyshi/tracker-sdk
+# 或 npm i / yarn add
 ```
 
-## 接入方式
+## 快速开始
 
-### ESM
+### 创建实例
 
 ```ts
-import { tracker, sendEvent } from "@goozyshi/tracker-sdk";
-import { exposeDirective, clickDirective } from "@goozyshi/tracker-sdk/vue";
-import { useExposure, useClick } from "@goozyshi/tracker-sdk/react";
+import { createTracker, createPolarisReporter } from "@goozyshi/tracker-sdk";
+
+export const tracker = createTracker({
+  appId: "mico-h5",
+  reporters: {
+    polaris: createPolarisReporter({
+      biz: "mico_h5",
+      env: "test",
+      publicInfo: { platform: "web" },
+    }),
+  },
+  defaultReporters: ["polaris"],
+  idm: {
+    userIdProvider: async () => ({ userId: await fetchUserId() }),
+    providerTimeout: 3000,
+  },
+  superProperties: { app_version: "1.0.0" },
+  onError: (err, scope, meta) => console.warn("[tracker]", scope, err, meta),
+});
+
+// autoInit 默认 true，无需手动调；想等 await 完成可 await tracker.init()
 ```
 
-### CJS
+### 上报事件
 
-```js
-const { tracker, sendEvent } = require("@goozyshi/tracker-sdk");
-const { exposeDirective } = require("@goozyshi/tracker-sdk/vue");
-const { useExposure } = require("@goozyshi/tracker-sdk/react");
+```ts
+tracker.track("page_view", { page: "home" });
+
+tracker.track(
+  "purchase",
+  { order_id: "123", amount: 99 },
+  {
+    reporters: ["polaris"],
+  }
+);
 ```
 
-### CDN
+`init()` 期间业务调用会进入 prequeue 缓冲，IDM 异步 provider 完成后按原始时间重放，identity 完整。
 
-通过 `<script>` 引入后，会挂载到全局变量 `TrackerSDK`（仅核心，不含 Vue/React 适配层）。
+## CDN 接入
+
+IIFE 产物挂全局 `TrackerSDK`。建议配合 `STUB_SNIPPET` 与 `installStub` 实现 SDK 加载前业务可调用。
 
 ```html
-<!-- unpkg -->
-<script src="https://unpkg.com/@goozyshi/tracker-sdk"></script>
-
-<!-- jsDelivr -->
-<script src="https://cdn.jsdelivr.net/npm/@goozyshi/tracker-sdk"></script>
-
-<!-- 锁定版本 -->
-<script src="https://unpkg.com/@goozyshi/tracker-sdk@1.2.1/dist/tracker-sdk.min.js"></script>
-
+<!-- 1. 头部内联 stub（务必在 SDK script 之前） -->
 <script>
-  const { tracker, sendEvent } = TrackerSDK;
-  tracker.init({ /* ... */ });
-  sendEvent("page_view", { page: "home" });
+  (function (w, k) {
+    var q = [];
+    function e(m) {
+      return function () {
+        q.push([m, arguments]);
+      };
+    }
+    var s = { _q: q, onReady: e("onReady") };
+    if (typeof Proxy === "function") {
+      w[k] = new Proxy(s, {
+        get: function (t, m) {
+          if (m === "_q") return q;
+          if (m === "onReady") return t.onReady;
+          if (typeof m === "symbol" || m === "then") return undefined;
+          return e(m);
+        },
+      });
+    } else {
+      w[k] = s;
+    }
+  })(window, "tracker");
+</script>
+
+<!-- 2. SDK 异步加载 -->
+<script
+  async
+  src="https://unpkg.com/@goozyshi/tracker-sdk/dist/tracker-sdk.min.js"
+  onload="(function(){
+    var real = TrackerSDK.createTracker({
+      appId: 'mico-h5',
+      reporters: { polaris: TrackerSDK.createPolarisReporter({ biz: 'mico_h5' }) },
+      defaultReporters: ['polaris'],
+    });
+    TrackerSDK.installStub(real);
+  })()"
+></script>
+
+<!-- 3. 业务任意位置 -->
+<script>
+  window.tracker.track("page_view");
+  window.tracker.identify("user-001");
+  window.tracker.onReady(function () {
+    window.tracker.track("app_ready");
+  });
 </script>
 ```
 
-## 初始化
+`STUB_SNIPPET` 同样从 `TrackerSDK.STUB_SNIPPET` 取得。`installStub` 会先把 `window.tracker` 替换为真实实例，再回放 `_q` 中的调用，单条失败相互隔离。
 
-SDK 默认导出**全局单例** `tracker`，跨模块共享，直接 `import` 即用。开启 `batch` / `offline` / `retry` 等能力时需先显式调用一次 `tracker.init(options)`。
+## 配置项 `TrackerConfig`
+
+| 字段               | 类型                          | 说明                                                                 |
+| ------------------ | ----------------------------- | -------------------------------------------------------------------- |
+| `appId`            | `string`                      | 业务方应用标识，必填                                                 |
+| `libVersion`       | `string`                      | SDK 版本字符串，默认 `'0.0.1'`                                       |
+| `reporters`        | `Record<string, Reporter>`    | 命名 reporter 注册表                                                 |
+| `reporter`         | `Reporter`                    | 单 reporter 简写，等价 `{ default: reporter }`                       |
+| `defaultReporters` | `string[]`                    | `track` 未显式 reporters 时的默认通道，默认 `['default']`            |
+| `idm`              | `IDMConfig`                   | 身份管理（userIdProvider、superPropertiesProvider、providerTimeout） |
+| `session`          | `SessionConfig`               | 会话窗口（默认 30 分钟）                                             |
+| `pipeline`         | `PipelineConfig`              | 采样率 / 脱敏黑名单 / trim 限制                                      |
+| `queue`            | `QueueConfig`                 | 批量大小 / 间隔 / 离线持久化                                         |
+| `retry`            | `RetryConfig`                 | 失败重试 `{ max=4, baseDelay=1000 }`                                 |
+| `prequeue`         | `PrequeueConfig`              | init 期间缓冲 `{ maxSize=100 }`                                      |
+| `superProperties`  | `JSONObject`                  | 全局静态属性                                                         |
+| `onError`          | `(err, scope, meta?) => void` | 统一错误回调                                                         |
+
+`tracker-sdk` 包的 `createTracker` 是 core 的薄封装，额外接受 `plugins?: Plugin[]` / `autoInit?: boolean`，默认自动 `init()`。
+
+## Reporter
+
+### 内置 Polaris Reporter
 
 ```ts
-import { tracker, createHttpReporter, type Reporter } from "@goozyshi/tracker-sdk";
+import { createPolarisReporter } from "@goozyshi/tracker-sdk";
+
+const polaris = createPolarisReporter({
+  biz: "mico_h5",
+  env: "test",
+  publicInfo: () => ({ platform: "web", tenant: getTenant() }),
+  publicInfoFieldWhitelist: ["order_id"],
+  headers: { "X-App": "mico" },
+  credentials: "include",
+  timeout: 5000,
+  channels: ["fetch", "beacon", "image", "xhr"],
+});
+```
+
+事件最终组装成北极星协议：
+
+```ts
+{
+  biz: 'mico_h5',
+  public_info: { platform, anonymous_id, user_id, session_id, app_id, lib_name, lib_version, url, ua, ... },
+  events: [{ event_name, client_timestamp, event_id, extra: { ...properties, ...capability } }],
+  extra: {},
+  ab_info: {},
+}
+```
+
+`publicInfoFieldWhitelist` 中的属性会从 `extra` 提升到 `public_info`。
+
+### 通用 HTTP Reporter
+
+```ts
+import { createHttpReporter } from "@goozyshi/tracker-sdk";
+
+const hybrid = createHttpReporter({
+  name: "hybrid",
+  url: "https://log.example.com/collect",
+  buildBody: (envelopes, channel) => ({
+    batch: envelopes.map((e) => ({ event: e.event, props: e.properties })),
+    channel,
+  }),
+  channels: ["fetch", "beacon", "image", "xhr"],
+  headers: { "X-App": "demo" },
+  timeout: 5000,
+});
+```
+
+通道降级（4 通道）：
+
+- 普通上报：`fetch(keepalive)` → `beacon` → `image` → `xhr`
+- 页面卸载（`sync: true`）：`beacon` → `fetch(keepalive)` → `image`
+- payload > 60KB 跳过 beacon；> 64KB 关闭 fetch keepalive；image URL > 2KB 跳过
+
+### 自定义 Reporter
+
+实现 `Reporter` 接口即可，事件载体是 `EventEnvelope`：
+
+```ts
+import type { Reporter } from "@goozyshi/tracker-sdk";
 
 const consoleReporter: Reporter = {
   name: "console",
-  track(event, data) {
-    console.log(`[Track] ${event}`, data);
+  async send(envelopes) {
+    for (const env of envelopes) console.log("[track]", env.event, env);
+    return { ok: true };
   },
 };
-
-tracker
-  .init({
-    defaultReporters: ["http"],
-    batch: { enabled: true, maxSize: 20, interval: 5000 },
-    offline: { enabled: true },
-    onError: (err, reporter, event) => console.error(err),
-  })
-  .addReporter(
-    createHttpReporter({
-      name: "http",
-      url: "https://log.example.com/collect",
-      batchTransform: (events) => ({ batch: events }),
-    })
-  )
-  .addReporter(consoleReporter)
-  .setGlobalData({ appVersion: "1.0.0" })
-  .setGlobalData(() => ({ userId: getUserId() }))
-  .setReporterGlobalData("http", () => ({ traceId: getTraceId() }))
-  .transform((data) => ({ ...data, ts: Date.now() }))
-  .filter((event) => !event.startsWith("debug_"));
 ```
 
-`setGlobalData()` 注入的是**所有 reporter 共享**的数据。  
-`setReporterGlobalData(name, provider)` 注入的是**指定 reporter 独享**的数据。
+注册有两种方式：
 
-`tracker.init({ middlewareReporter })` 会自动注册内置数据中台 reporter，固定名称为 `middleware`。
+```ts
+// 方式 1：构造时注册
+createTracker({
+  reporters: { polaris, hybrid, console: consoleReporter },
+  defaultReporters: ["polaris"],
+});
 
-> 需要多个隔离实例（如主站 + 子应用上报到不同后端）时，用 `createTracker(options)` 显式创建。
+// 方式 2：链式
+tracker.addReporter("hybrid", hybrid).addReporter("console", consoleReporter);
+```
 
-## TrackerOptions
-
-
-| 字段                 | 类型               | 说明                  |
-| ------------------ | ---------------- | ------------------- |
-| `defaultReporters` | `string[]`       | 默认 reporters，不指定则全部 |
-| `batch`            | `BatchOptions`   | 批量上报配置              |
-| `offline`          | `OfflineOptions` | 离线存储配置              |
-| `middlewareReporter` | `MiddlewareReporterOptions` | 自动注册内置数据中台 reporter |
-| `onError`          | `Function`       | 错误回调                |
-| `retry`            | `{ max, delay }` | 重试配置                |
-
-
-## Vue 指令
+## Vue 集成
 
 ### Vue 3
 
 ```ts
-import { exposeDirective, clickDirective } from "@goozyshi/tracker-sdk/vue";
+// main.ts
+import { createTracker, createPolarisReporter } from "@goozyshi/tracker-sdk";
+import { createVueBindings } from "@goozyshi/tracker-sdk/vue";
 
+const tracker = createTracker({
+  appId: "mico-h5",
+  reporters: { polaris: createPolarisReporter({ biz: "mico_h5" }) },
+  defaultReporters: ["polaris"],
+});
+
+const { exposeDirective, clickDirective } = createVueBindings(tracker);
 app.directive("expose", exposeDirective);
 app.directive("click", clickDirective);
+```
+
+```vue
+<template>
+  <div v-expose="{ name: 'banner_expose', data: { id: 1 } }">Banner</div>
+
+  <div
+    v-expose="{
+      name: 'banner_expose',
+      data: { id: bannerId },
+      options: {
+        threshold: 0.5,
+        duration: 1000,
+        once: true,
+        reporters: ['hybrid'],
+      },
+    }"
+  >
+    Banner
+  </div>
+
+  <button
+    v-click="{
+      name: 'btn_click',
+      data: { id: 'buy' },
+      options: { debounce: 300 },
+    }"
+  >
+    购买
+  </button>
+</template>
 ```
 
 ### Vue 2
 
 ```ts
 import Vue from "vue";
-import { exposeDirective, clickDirective } from "@goozyshi/tracker-sdk/vue2";
+import { createVue2Bindings } from "@goozyshi/tracker-sdk/vue2";
 
+const { exposeDirective, clickDirective } = createVue2Bindings(tracker);
 Vue.directive("expose", exposeDirective);
 Vue.directive("click", clickDirective);
 ```
 
-### v-expose
+`v-expose` / `v-click` 配置：
 
-```vue
-<div v-expose="{ name: 'banner_expose', data: { id: 1 } }">Banner</div>
+| 字段                 | 类型              | 说明                     |
+| -------------------- | ----------------- | ------------------------ |
+| `name`               | `string`          | 事件名                   |
+| `data`               | `JSONObject`      | 业务属性                 |
+| `options.threshold`  | `number`          | 曝光可见比例，默认 `0.5` |
+| `options.duration`   | `number`          | 曝光时长 ms，默认 `0`    |
+| `options.once`       | `boolean`         | 仅上报一次，默认 `true`  |
+| `options.groupKey`   | `string`          | 列表分组键               |
+| `options.groupDelay` | `number`          | 分组延迟 ms，默认 `100`  |
+| `options.debounce`   | `number`          | 点击防抖 ms              |
+| `options.throttle`   | `number`          | 点击节流 ms              |
+| `options.reporters`  | `string[] \| '*'` | 指定 reporter            |
 
-<!-- 完整配置 -->
-<div
-  v-expose="{
-    name: 'banner_expose',
-    data: { id: 1 },
-    options: {
-      threshold: 0.5,
-      duration: 1000,
-      once: true,
-      reporters: ['hybrid'],
-    },
-  }"
->Banner</div>
-
-<!-- 列表分组上报 -->
-<div
-  v-for="item in list"
-  v-expose="{
-    name: 'list_expose',
-    data: { id: item.id },
-    options: { groupKey: 'list', groupDelay: 200 },
-  }"
->{{ item.name }}</div>
-```
-
-
-| 参数        | 类型                     | 说明   |
-| --------- | ---------------------- | ---- |
-| `name`    | `string`               | 事件名  |
-| `data`    | `object`               | 事件数据 |
-| `options` | `ExposeBindingOptions` | 曝光配置 |
-
-
-`options` 字段：
-
-
-| 参数           | 类型         | 默认值    | 说明           |
-| ------------ | ---------- | ------ | ------------ |
-| `threshold`  | `number`   | `0.5`  | 可见比例         |
-| `duration`   | `number`   | `0`    | 曝光时长 (ms)    |
-| `once`       | `boolean`  | `true` | 仅上报一次        |
-| `groupKey`   | `string`   | -      | 分组 key       |
-| `groupDelay` | `number`   | `100`  | 分组延迟 (ms)    |
-| `reporters`  | `string[]` | -      | 指定 reporters |
-
-
-### v-click
-
-```vue
-<button v-click="{ name: 'btn_click', data: { id: 'buy' } }">购买</button>
-
-<!-- 防抖/节流 -->
-<button
-  v-click="{
-    name: 'btn_click',
-    data: { id: 'buy' },
-    options: { debounce: 300 },
-  }"
->购买</button>
-```
-
-
-| 参数        | 类型                    | 说明   |
-| --------- | --------------------- | ---- |
-| `name`    | `string`              | 事件名  |
-| `data`    | `object`              | 事件数据 |
-| `options` | `ClickBindingOptions` | 点击配置 |
-
-
-`options` 字段：
-
-
-| 参数          | 类型         | 说明           |
-| ----------- | ---------- | ------------ |
-| `debounce`  | `number`   | 防抖 (ms)      |
-| `throttle`  | `number`   | 节流 (ms)      |
-| `reporters` | `string[]` | 指定 reporters |
-
-
-## React Hook
+## React 集成
 
 ```tsx
-import { useExposure, useClick } from "@goozyshi/tracker-sdk/react";
+import { createTracker, createPolarisReporter } from "@goozyshi/tracker-sdk";
+import { createReactBindings } from "@goozyshi/tracker-sdk/react";
 
+const tracker = createTracker({
+  appId: "mico-h5",
+  reporters: { polaris: createPolarisReporter({ biz: "mico_h5" }) },
+});
+export const { useExposure, useClick, useBindClick, useTracker } =
+  createReactBindings(tracker);
+```
+
+```tsx
 function Banner() {
   const ref = useExposure<HTMLDivElement>(
     "banner_expose",
     { id: 1 },
-    {
-      threshold: 0.5,
-      duration: 1000,
-      once: true,
-    }
+    { threshold: 0.5, duration: 1000 }
   );
-
   return <div ref={ref}>Banner</div>;
 }
 
-function Button() {
-  const handleClick = useClick("btn_click", { id: "buy" }, { debounce: 300 });
+function BuyBtn() {
+  const onClick = useClick("btn_click", { id: "buy" }, { debounce: 300 });
+  return <button onClick={onClick}>购买</button>;
+}
 
-  return <button onClick={handleClick}>购买</button>;
+function Card() {
+  const ref = useBindClick<HTMLDivElement>("card_click", { id: "c1" });
+  return <div ref={ref}>Card</div>;
 }
 ```
 
-### useExposure
-
-```ts
-const ref = useExposure<T>(event, data?, options?);
-```
-
-返回 `RefObject<T>`，绑定到目标元素。
-
-### useClick
-
-```ts
-const handler = useClick(event, data?, options?);
-```
-
-返回点击处理函数。
+`useClick` 返回 handler 自己挂；`useBindClick` 返回 ref，组件挂载即自动 `addEventListener`。
 
 ## 命令式 API
 
 ```ts
-import { sendEvent } from "@goozyshi/tracker-sdk";
-
-sendEvent("page_view", { page: "home" });
-
-sendEvent("debug_log", { msg: "test" }, { reporters: ["console"] });
-
-sendEvent(
-  "purchase",
-  { orderId: "123", amount: 99 },
-  {
-    reporters: ["http", "console"],
-    reporterData: {
-      http: {
-        publicInfo: { page: location.pathname },
-      },
-    },
-  }
-);
+tracker.track(event, properties?, { reporters? });
+tracker.identify(userId);          // 切登录态，会自动滚动 session
+tracker.register({ key: value });  // 追加 superProperties
+tracker.reset();                   // 登出，清空 userId + 滚动 anonymousId
+tracker.onReady(() => {});         // 等待 init 完成
+tracker.use(plugin);               // 注册插件
+tracker.addReporter(name, reporter);
+tracker.setReporterData(name, () => ({...})); // reporter 私有数据
+tracker.destroy();
 ```
 
-### Reporter 数据隔离
+## IDM 身份管理
 
-- `setGlobalData()`：所有 reporter 共享
-- `setReporterGlobalData(name, provider)`：指定 reporter 共享
-- `sendEvent(event, data, { reporterData })`：指定 reporter 的单次私有数据
-
-```ts
-tracker
-  .addReporter(httpReporter)
-  .addReporter(consoleReporter)
-  .setGlobalData(() => ({ userId: getUserId() }))
-  .setReporterGlobalData("http", () => ({
-    traceId: getTraceId(),
-    publicInfo: { platform: "web" },
-  }));
-
-sendEvent(
-  "buy_click",
-  { skuId: 1 },
-  {
-    reporters: ["http", "console"],
-    reporterData: {
-      http: {
-        publicInfo: { page: "/detail" },
-      },
-    },
-  }
-);
-```
-
-上面这次事件里：
-
-- `console` 只能拿到 `{ skuId: 1 }` 和共享全局数据
-- `http` 额外能拿到自己的 `traceId` / `publicInfo`
-
-SDK 会按 reporter 隔离 `data` 和 `privateData`，某个 reporter 内部修改入参，不会影响其他 reporter。
-
-## 内置 HTTP Reporter
-
-多数场景无需手写 Reporter，用 `createHttpReporter` 传 `url` + 可选 `transform` 即可。内部按场景自动降级：
-
-- **页面卸载 / `visibilitychange` hidden**：`sendBeacon` → `fetch(keepalive)` → `image`
-- **普通上报**：`fetch(keepalive)` → `sendBeacon` → `image` → `xhr`
-- payload > 60KB 自动跳过 `sendBeacon`；payload > 64KB 自动关闭 `fetch` 的 `keepalive`
-- `image` 通道用 `GET` 拼 query 上报 gif，可跨域，URL > 2000 字符时跳过
+| 标识          | 来源                                   | 持久化                    |
+| ------------- | -------------------------------------- | ------------------------- |
+| `anonymousId` | 首次访问时生成 uuid                    | localStorage              |
+| `userId`      | `identify(uid)` / `idm.userIdProvider` | localStorage              |
+| `sessionId`   | 30 分钟空闲 / 跨日 / 切账号自动滚动    | localStorage + lastActive |
 
 ```ts
-import { createHttpReporter } from "@goozyshi/tracker-sdk";
-
-const httpReporter = createHttpReporter({
-  name: "http",
-  url: "https://log.example.com/collect",
-  endpoints: {
-    image: "https://log.example.com/pixel.gif",
+createTracker({
+  idm: {
+    userIdProvider: () =>
+      fetch("/me")
+        .then((r) => r.json())
+        .then((u) => ({ userId: u.id })),
+    superPropertiesProvider: async () => ({ tenant: await getTenant() }),
+    providerTimeout: 3000,
   },
-  transform: (event, data) => ({ e: event, ...data, t: Date.now() }),
-  batchTransform: (events) => ({ batch: events }),
-  headers: { "X-App": "demo" },
-  credentials: "include",
-  timeout: 5000,
-  transport: ["beacon", "fetch", "image", "xhr"],
 });
 ```
 
+异步 provider 期间业务调 `track()`，事件进入 prequeue。provider 完成（成功/超时/失败）后 `markReady` 并重放，identity 完整。
 
-| 字段               | 类型                                          | 说明                                              |
-| ---------------- | ------------------------------------------- | ----------------------------------------------- |
-| `name`           | `string`                                    | 唯一标识                                            |
-| `url`            | `string`                                    | 默认上报地址，所有未在 `endpoints` 覆盖的通道都走这里               |
-| `endpoints`      | `Partial<Record<TransportChannel, string>>` | 按通道覆盖 URL，典型场景：`image` 单独指向 GET 像素接口            |
-| `transform`      | `(event, data) => any`                      | 单条 payload 构造，默认 `{ event, data }`              |
-| `batchTransform` | `(events) => any`                           | 批量 payload 构造，默认 `{ events }`                   |
-| `transport`      | `TransportChannel[]`                        | 启用的通道，默认全开                                      |
-| `headers`        | `Record<string,string>`                     | 自定义请求头（仅 `fetch` / `xhr` 生效）                    |
-| `credentials`    | `RequestCredentials`                        | 跨域凭据                                            |
-| `timeout`        | `number`                                    | 超时 (ms)                                         |
-| `method`         | `'POST' \| 'GET'`                           | HTTP 方法，默认 `POST`                               |
+`identify` 在 `userIdProvider` 完成前会被锁定（避免被 provider 覆盖），通过 `onError('identify_blocked', ...)` 暴露。
 
-## 内置数据中台 Reporter
+## Reporter 私有数据
 
-通过 `tracker.init({ middlewareReporter })` 启用，SDK 会自动注册固定名称的 reporter `middleware`，无需手动 `addReporter()`。
+不同 reporter 需要独立的全局数据时：
 
 ```ts
-import { tracker, sendEvent } from "@goozyshi/tracker-sdk";
-
 tracker
-  .init({
-    defaultReporters: ["middleware"],
-    middlewareReporter: {
-      biz: "maidocha",
-      env: "test",
-      publicInfo: () => ({
-        platform: "web",
-        timestamp: Date.now(),
-      }),
-      headers: { "X-App": "zax" },
-      credentials: "include",
-      timeout: 5000,
-      transport: ["image", "fetch", "beacon", "xhr"],
-    },
-  })
-  .setGlobalData(() => ({ userId: getUserId() }))
-  .setReporterGlobalData("middleware", () => ({
-    publicInfo: { appVersion: "1.0.0" },
-    traceId: getTraceId(),
-  }));
-
-sendEvent(
-  "page_view",
-  { page: "home" },
-  {
-    reporterData: {
-      middleware: {
-        publicInfo: { pageId: "home" },
-        abGroup: "A",
-      },
-    },
-  }
-);
+  .setReporterData("polaris", () => ({ publicInfo: { traceId: getTraceId() } }))
+  .setReporterData("hybrid", () => ({ scene: getScene() }));
 ```
 
-上面的请求体会被固定组装成：
+每个 envelope 会按 reporter 名称取一次值，注入到 `envelope.reporterScope`。Polaris reporter 中 `reporterScope.publicInfo` 会合并进 `public_info`，其余字段进 `events[].extra`。
+
+## 插件
+
+```ts
+import type { Plugin } from "@goozyshi/tracker-sdk";
+
+const samplePlugin: Plugin = {
+  name: "sample",
+  init(ctx) {
+    ctx.tracker.register({ build: ctx.libVersion });
+  },
+  beforeProcess(raw) {
+    if (raw.event.startsWith("debug_")) return null; // 丢弃
+    return raw;
+  },
+  beforeSend(envelopes, ctx) {
+    return envelopes;
+  },
+  afterSend(envelopes, result, ctx) {
+    /* metric 上报等 */
+  },
+};
+
+tracker.use(samplePlugin);
+```
+
+钩子：
+
+- `init(ctx)` — 注册时调用
+- `beforeProcess(raw)` — pipeline 前，可改写或返回 null 丢弃
+- `beforeSend(envelopes, { reporterName })` — 入桶后、网络请求前，按 reporter 拦截
+- `afterSend(envelopes, result, { reporterName })` — 上报后回调
+
+## 事件模型 `EventEnvelope`
 
 ```ts
 {
-  biz: "maidocha",
-  public_info: {
-    platform: "web",
-    timestamp: 1710000000000,
-    appVersion: "1.0.0",
-    pageId: "home",
-  },
-  events: [
-    {
-      event_name: "page_view",
-      client_timestamp: 1710000000000,
-      extra: {
-        userId: "u1",
-        traceId: "t1",
-        abGroup: "A",
-        page: "home",
-      },
-    },
-  ],
+  schemaVersion: 'tracker.v1',
+  eventId: 'uuid',
+  event: 'banner_expose',
+  type: 'track',
+  time: 1730000000000,
+  identity: { anonymousId, userId, sessionId },
+  app: { appId, lib: { name, version } },
+  system: { runtime, url, referrer, title, ua, viewportWidth, viewportHeight, screenWidth, screenHeight, timezoneOffset },
+  capability?: { autotrack?: {...}, replay?: {...}, perf?: {...} },
+  properties: { /* 业务属性 */ },
+  reporterScope?: { /* setReporterData 注入 */ },
 }
 ```
 
-规则：
+预置事件统一以 `$` 前缀（如 `$pageview`、`$session_start`）；业务事件不允许 `$` 开头。
 
-- `middlewareReporter.publicInfo` -> `public_info`
-- `setGlobalData()` -> `events[].extra`
-- `setReporterGlobalData("middleware", { publicInfo })` -> `public_info`
-- `setReporterGlobalData("middleware", 其他字段)` -> `events[].extra`
-- `sendEvent(..., { reporterData: { middleware: { publicInfo } } })` -> `public_info`
-- `sendEvent(..., { reporterData: { middleware: 其他字段 } })` -> 当前事件 `extra`
+## 通道降级与重试
 
-环境与配置：
+- Reporter `send` 失败时 sender 用指数退避重试 `retry.max` 次（默认 4，base 1s）
+- 4xx / payload 过大 / 通道全不支持 → 不重试，直接进 offline
+- offline 用 localStorage 持久化，下次 `init()` 时 `bootstrapFromOffline` 取出重传
+- 多 tab 之间靠 envelope `eventId` 服务端幂等去重，前端不加锁
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `biz` | `string` | 业务标识，必填 |
-| `env` | `'test' \| 'prod'` | 环境标识，URL 由 SDK 内部维护；当前版本仅内置 `test` 地址 |
-| `publicInfo` | `DataProvider` | 注入到 `public_info` |
-| `endpoints` | `Partial<Record<TransportChannel, string>>` | 按通道覆盖 URL |
-| `headers` | `Record<string,string>` | 自定义请求头 |
-| `credentials` | `RequestCredentials` | 跨域凭据 |
-| `timeout` | `number` | 超时 (ms) |
-| `transport` | `TransportChannel[]` | 启用的通道，默认 `['image', 'fetch', 'beacon', 'xhr']` |
-| `method` | `'POST' \| 'GET'` | HTTP 方法，默认 `POST` |
+## 错误回调 `onError(err, scope, meta?)`
 
+| scope                                                           | 含义                                                |
+| --------------------------------------------------------------- | --------------------------------------------------- |
+| `config_invalid`                                                | 配置非法                                            |
+| `storage_unavailable` / `storage_full`                          | localStorage 不可用 / 配额满                        |
+| `provider_failed`                                               | userIdProvider / superPropertiesProvider 失败或超时 |
+| `identify_blocked`                                              | userIdProvider 锁定期间业务 identify                |
+| `pipeline_error`                                                | 处理管道异常                                        |
+| `plugin_error`                                                  | 插件钩子抛错                                        |
+| `reporter_failed`                                               | reporter 重试耗尽                                   |
+| `reporter_missing` / `route_invalid` / `no_reporter_registered` | reporter 路由问题                                   |
+| `prequeue_overflow`                                             | init 期间缓冲超量                                   |
+| `reporter_data_provider_failed`                                 | setReporterData provider 抛错                       |
 
-## 自定义 Reporter
-
-需要对接私有 SDK 或做特殊处理时，实现 `Reporter` 接口即可：
+## 类型导出
 
 ```ts
-import type { Reporter } from "@goozyshi/tracker-sdk";
-
-const saReporter: Reporter = {
-  name: "sa",
-  track(event, data, ctx) {
-    sensors.track(event, {
-      $time: data?.ts,
-      ...ctx?.privateData,
-      ...data,
-    });
-  },
-  batchTrack(events) {
-    sensors.batchSend(
-      events.map(({ event, data, privateData }) => ({
-        event,
-        ...privateData,
-        ...data,
-      }))
-    );
-  },
-};
+import type {
+  // core
+  Tracker,
+  TrackerConfig,
+  ResolvedConfig,
+  TrackOptions,
+  EventEnvelope,
+  Reporter,
+  ReporterRegistry,
+  ReporterResult,
+  ReporterSendOptions,
+  Plugin,
+  PluginContext,
+  IDMConfig,
+  SessionConfig,
+  PipelineConfig,
+  QueueConfig,
+  RetryConfig,
+  PrequeueConfig,
+  TrackerErrorScope,
+  TrackerErrorHandler,
+  EventIdentity,
+  EventApp,
+  SystemContext,
+  CapabilityRecord,
+  // sdk
+  PolarisReporterOptions,
+  PolarisPayload,
+  PolarisEventItem,
+  PolarisPublicInfo,
+  HttpReporterOptions,
+  HttpReporterUrl,
+  HttpReporterBody,
+  ClickOptions,
+  ExposureOptions,
+  UnbindFn,
+  InstallStubOptions,
+  TrackerStub,
+} from "@goozyshi/tracker-sdk";
 ```
-
-
-| 字段           | 必填  | 说明                                                 |
-| ------------ | --- | -------------------------------------------------- |
-| `name`       | ✅   | 唯一标识                                               |
-| `track`      | ✅   | 单条上报，第三参 `ctx?.sync=true` 表示页面卸载场景，应走 `sendBeacon`；`ctx?.privateData` 为当前 reporter 私有数据 |
-| `batchTrack` | ❌   | 批量上报，第三参同上；每条 `events[i].privateData` 为当前 reporter 私有数据 |
-| `init`       | ❌   | 初始化钩子                                              |
-| `destroy`    | ❌   | 销毁钩子                                               |
-
 
 ## 最佳实践
 
-### 集中管理埋点名（带类型提示）
+### 集中管理事件名
 
 ```ts
 // src/tracker/events.ts
-declare module "@goozyshi/tracker-sdk" {
-  interface EventRegistry {
-    page_view: true;
-    banner_expose: true;
-    banner_click: true;
-    purchase: true;
-  }
-}
-
-export {};
-```
-
-在项目入口引入一次：
-
-```ts
-// main.ts
-import "./tracker/events";
-```
-
-使用时自动提示，无需 import：
-
-```vue
-<template>
-  <!-- name 字段会有 'page_view' | 'banner_expose' | ... 提示 -->
-  <div v-expose="{ name: 'banner_expose', data: { id: 1 } }">Banner</div>
-</template>
-```
-
-```ts
-sendEvent("page_view", { page: "home" });
-```
-
-### 统一参数类型
-
-```ts
-// src/tracker/params.ts
-import type { Events } from "./events";
+export const Events = {
+  PAGE_VIEW: "page_view",
+  BANNER_EXPOSE: "banner_expose",
+  PURCHASE: "purchase",
+} as const;
 
 export interface EventParams {
   [Events.PAGE_VIEW]: { page: string };
-  [Events.BANNER_EXPOSE]: { id: number; position?: string };
-  [Events.PURCHASE]: { orderId: string; amount: number };
+  [Events.BANNER_EXPOSE]: { id: number };
+  [Events.PURCHASE]: { order_id: string; amount: number };
 }
-```
 
-```ts
-// 类型安全的 sendEvent
-import { sendEvent } from "@goozyshi/tracker-sdk";
-import { Events, type EventParams } from "@/tracker";
-
-function trackEvent<K extends keyof EventParams>(
+import { tracker } from "./tracker";
+export function track<K extends keyof EventParams>(
   event: K,
-  data: EventParams[K]
+  params: EventParams[K]
 ) {
-  sendEvent(event, data);
+  tracker.track(event, params);
 }
-
-trackEvent(Events.PURCHASE, { orderId: "123", amount: 99 });
 ```
 
 ### 项目结构
 
 ```
 src/tracker/
-├── index.ts        # 初始化配置
-├── events.ts       # 埋点名常量
-├── params.ts       # 参数类型
-└── reporters/      # Reporter 实现
-    ├── sa.ts
-    └── hybrid.ts
+├── index.ts        # createTracker + 业务初始化
+├── events.ts       # 事件名 + 参数类型
+├── reporters/      # 自定义 reporter（hybrid / console 等）
+└── plugins/        # 自定义插件
 ```
 
-## 常见问题
+## FAQ
 
-### Vite 指令失效（v1.0.3 及以下）
+**Q: SDK 加载到 ready 期间业务事件会丢吗？**
+A: 不会。`init()` 期间事件进 prequeue（默认 100 条），ready 后按原始 time 重放。CDN 场景配合 stub snippet 可覆盖 SDK 还未加载阶段。
 
-1.0.3 及以下版本使用 `globalThis` 共享单例，Vite 预构建会导致模块隔离，指令失效。
+**Q: 离线数据刷新后会丢吗？**
+A: 不会。bootstrap 时一次性回灌内存桶并触发 flush，成功后清通道，失败重新入 offline。多 tab 不加锁，靠服务端 eventId 幂等去重。
 
-**解决**：升级到 1.0.4+（已改用 `window`）。
-
-## 类型导出
-
-```ts
-import type {
-  Reporter,
-  ReporterDataMap,
-  ReporterPrivateData,
-  ReporterContext,
-  MiddlewareReporterEnv,
-  MiddlewareReporterOptions,
-  TrackerOptions,
-  ExposureOptions,
-  ClickOptions,
-  SendEventOptions,
-  TrackOptions,
-  TrackEvent,
-  Middleware,
-  DataProvider,
-  TransformFn,
-  FilterFn,
-  UnbindFn,
-  HttpReporterOptions,
-  TransportChannel,
-  TransportRequest,
-} from "@goozyshi/tracker-sdk";
-```
-
+**Q: 怎么本地观察上报？**
+A: 注册一个 `console` reporter，或在 `onError` / 插件 `afterSend` 钩子里打日志。

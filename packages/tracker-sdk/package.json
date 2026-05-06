@@ -1,0 +1,121 @@
+{
+  "name": "@goozyshi/tracker-sdk",
+  "version": "0.1.0",
+  "description": "Aggregate package for @goozyshi tracker (M1 + IDM)",
+  "keywords": [
+    "tracker",
+    "analytics",
+    "exposure",
+    "click",
+    "react",
+    "vue"
+  ],
+  "license": "MIT",
+  "author": "goozyshi@gmail.com",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab-vywrajy.micoworld.net/micocenter/mico-portal/portal-center/trace",
+    "directory": "packages/tracker-sdk"
+  },
+  "homepage": "https://gitlab-vywrajy.micoworld.net/micocenter/mico-portal/portal-center/trace",
+  "bugs": {
+    "url": "https://gitlab-vywrajy.micoworld.net/micocenter/mico-portal/portal-center/trace/-/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/lib/index.js",
+  "module": "./dist/es/index.js",
+  "types": "./dist/es/index.d.ts",
+  "unpkg": "./dist/tracker-sdk.min.js",
+  "jsdelivr": "./dist/tracker-sdk.min.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/es/index.d.ts",
+        "default": "./dist/es/index.js"
+      },
+      "require": {
+        "types": "./dist/lib/index.d.ts",
+        "default": "./dist/lib/index.js"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/es/react.d.ts",
+        "default": "./dist/es/react.js"
+      },
+      "require": {
+        "types": "./dist/lib/react.d.ts",
+        "default": "./dist/lib/react.js"
+      }
+    },
+    "./vue": {
+      "import": {
+        "types": "./dist/es/vue.d.ts",
+        "default": "./dist/es/vue.js"
+      },
+      "require": {
+        "types": "./dist/lib/vue.d.ts",
+        "default": "./dist/lib/vue.js"
+      }
+    },
+    "./vue2": {
+      "import": {
+        "types": "./dist/es/vue2.d.ts",
+        "default": "./dist/es/vue2.js"
+      },
+      "require": {
+        "types": "./dist/lib/vue2.d.ts",
+        "default": "./dist/lib/vue2.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "react": [
+        "./dist/es/react.d.ts"
+      ],
+      "vue": [
+        "./dist/es/vue.d.ts"
+      ],
+      "vue2": [
+        "./dist/es/vue2.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts-ext.mjs",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@goozyshi/tracker-shared": "workspace:*",
+    "@goozyshi/tracker-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "vue": ">=2.7.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "react": "^18.2.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.0.0",
+    "vue": "^3.4.0"
+  }
+}
